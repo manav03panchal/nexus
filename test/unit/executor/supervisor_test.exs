@@ -151,6 +151,7 @@ defmodule Nexus.Executor.SupervisorTest do
   end
 
   describe "supervision" do
+    @tag :capture_log
     test "tasks are temporary (not restarted)", %{supervisor: sup} do
       test_pid = self()
 
