@@ -1,0 +1,105 @@
+# Nexus Configuration File
+# Copy this file to nexus.exs and customize for your project
+
+# =============================================================================
+# Configuration
+# =============================================================================
+
+config :nexus,
+  # Default SSH user (can be overridden per host)
+  default_user: System.get_env("USER"),
+
+  # Default SSH port
+  default_port: 22,
+
+  # Connection timeout in milliseconds
+  connect_timeout: 10_000,
+
+  # Command execution timeout in milliseconds
+  command_timeout: 60_000,
+
+  # Maximum concurrent connections per host
+  max_connections: 5,
+
+  # Continue executing on task failure
+  continue_on_error: false
+
+# =============================================================================
+# Host Definitions
+# =============================================================================
+
+# Define individual hosts
+host :web1, "web1.example.com"
+host :web2, "deploy@web2.example.com"
+host :db, "admin@db.example.com:2222"
+
+# Define host groups
+group :web, [:web1, :web2]
+group :all, [:web1, :web2, :db]
+
+# =============================================================================
+# Task Definitions
+# =============================================================================
+
+# Simple local task
+task :build do
+  run "mix deps.get"
+  run "mix compile"
+end
+
+# Task with dependencies
+task :test, deps: [:build] do
+  run "mix test"
+end
+
+# Remote task on specific hosts
+task :deploy, deps: [:test], on: :web do
+  run "cd /app && git pull"
+  run "mix deps.get --only prod"
+  run "MIX_ENV=prod mix compile"
+  run "sudo systemctl restart myapp"
+end
+
+# Task with sudo
+task :restart, on: :web do
+  run "sudo systemctl restart myapp", sudo: true
+end
+
+# Task with retries
+task :health_check, on: :web do
+  run "curl -f http://localhost:4000/health",
+    retries: 3,
+    retry_delay: 5_000
+end
+
+# Serial execution (one host at a time)
+task :rolling_restart, on: :web, strategy: :serial do
+  run "sudo systemctl restart myapp"
+  run "sleep 10"
+  run "curl -f http://localhost:4000/health"
+end
+
+# Database tasks
+task :db_backup, on: :db do
+  run "pg_dump myapp > /backups/myapp_$(date +%Y%m%d).sql"
+end
+
+task :db_migrate, deps: [:deploy], on: :db do
+  run "cd /app && MIX_ENV=prod mix ecto.migrate"
+end
+
+# Full deployment pipeline
+task :release, deps: [:deploy, :db_migrate] do
+  # This task runs after deploy and db_migrate complete
+  run "echo 'Deployment complete!'"
+end
+
+# =============================================================================
+# Environment-specific overrides
+# =============================================================================
+
+if System.get_env("MIX_ENV") == "prod" do
+  config :nexus,
+    continue_on_error: false,
+    command_timeout: 300_000
+end

@@ -16,15 +16,7 @@ defmodule Nexus.MixProject do
 
       # Test configuration
       elixirc_paths: elixirc_paths(Mix.env()),
-      test_paths: test_paths(Mix.env()),
       test_coverage: [tool: ExCoveralls],
-      preferred_cli_env: [
-        coveralls: :test,
-        "coveralls.detail": :test,
-        "coveralls.post": :test,
-        "coveralls.html": :test,
-        "coveralls.github": :test
-      ],
 
       # Dialyzer
       dialyzer: [
@@ -45,6 +37,18 @@ defmodule Nexus.MixProject do
     ]
   end
 
+  def cli do
+    [
+      preferred_envs: [
+        coveralls: :test,
+        "coveralls.detail": :test,
+        "coveralls.post": :test,
+        "coveralls.html": :test,
+        "coveralls.github": :test
+      ]
+    ]
+  end
+
   def application do
     [
       extra_applications: [:logger, :ssh, :public_key],
@@ -61,9 +65,6 @@ defmodule Nexus.MixProject do
 
   defp elixirc_paths(:test), do: ["lib", "test/support"]
   defp elixirc_paths(_), do: ["lib"]
-
-  defp test_paths(:test), do: ["test/unit", "test/integration", "test/property"]
-  defp test_paths(_), do: ["test"]
 
   defp deps do
     [
@@ -97,10 +98,10 @@ defmodule Nexus.MixProject do
     [
       setup: ["deps.get", "deps.compile"],
       lint: ["format --check-formatted", "credo --strict", "sobelow --config"],
-      "test.unit": ["test test/unit"],
-      "test.integration": ["test test/integration"],
-      "test.property": ["test test/property"],
-      "test.all": ["test test/unit test/integration test/property"],
+      "test.unit": ["test --only unit"],
+      "test.integration": ["test --only integration"],
+      "test.property": ["test --only property"],
+      "test.all": ["test --include integration --include property"],
       quality: ["format", "credo --strict", "dialyzer", "sobelow --config"]
     ]
   end
