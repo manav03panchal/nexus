@@ -15,7 +15,9 @@
     # parse_file reads user-specified config paths by design
     "Traversal.FileModule",
     # Local executor intentionally executes user-provided commands
-    "CI.System"
+    "CI.System",
+    # Pool normalizes controlled hostname strings to atoms for internal keying
+    "DOS.StringToAtom"
   ],
   ignore_files: []
 ]

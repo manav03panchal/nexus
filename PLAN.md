@@ -612,6 +612,100 @@ end
 
 ---
 
+## Future: Idempotency System (v0.2+)
+
+> **Rationale:** Shell commands are error-prone. Users forget `mkdir -p` vs `mkdir`, 
+> or append to files on retry. Nexus should provide built-in idempotent primitives
+> so users don't have to think about it.
+
+### Built-in Idempotent Commands
+
+```elixir
+task :setup do
+  # Instead of: run "mkdir -p /opt/app"
+  ensure_dir "/opt/app"
+  
+  # Instead of: run "id deploy || useradd deploy"  
+  ensure_user "deploy", groups: ["sudo", "docker"]
+  
+  # Instead of: run "apt-get install -y nginx"
+  ensure_package "nginx"
+  
+  # Instead of: run "systemctl enable --now nginx"
+  ensure_service "nginx", state: :running, enabled: true
+  
+  # Instead of: run "cp config.conf /etc/app/"
+  ensure_file "/etc/app/config.conf",
+    source: "config.conf",
+    mode: 0o644,
+    owner: "deploy"
+  
+  # Instead of: run "echo 'line' >> /etc/file" (dangerous!)
+  ensure_line "/etc/sudoers", "deploy ALL=(ALL) NOPASSWD:ALL"
+  
+  # Instead of: run "ln -sf /opt/app/bin /usr/local/bin/app"
+  ensure_link "/usr/local/bin/app", to: "/opt/app/bin"
+end
+```
+
+### How It Works
+
+Each `ensure_*` command:
+1. Checks current state on target
+2. Compares to desired state
+3. Only acts if different
+4. Reports: `ok` (no change), `changed`, or `failed`
+
+### Implementation Phases
+
+**v0.2:** Core idempotent commands
+- `ensure_dir`, `ensure_file`, `ensure_link`
+- `ensure_line`, `ensure_block` (in file)
+- `ensure_absent` (remove file/dir)
+
+**v0.3:** System commands  
+- `ensure_user`, `ensure_group`
+- `ensure_package` (apt/yum/brew detection)
+- `ensure_service` (systemd/launchd detection)
+
+**v0.4:** Advanced
+- `ensure_template` (EEx templating)
+- `ensure_git` (clone/pull repo)
+- `ensure_cron` (manage cron entries safely)
+- Custom `ensure` macro for user-defined checks
+
+### Annotation for Raw Commands
+
+```elixir
+task :deploy do
+  # Idempotent commands - safe to retry
+  ensure_dir "/opt/app"
+  ensure_service "app", state: :stopped
+  
+  # Raw command - user asserts idempotency
+  run "git pull", idempotent: true
+  
+  # Raw command - warn on retry, prompt on crash recovery
+  run "curl -X POST https://slack.com/webhook", idempotent: false
+  
+  ensure_service "app", state: :running
+end
+```
+
+### Dry-run Support
+
+All `ensure_*` commands support dry-run mode:
+```
+$ nexus run setup --dry-run
+
+[dry-run] ensure_dir /opt/app -> would create
+[dry-run] ensure_user deploy -> already exists (ok)
+[dry-run] ensure_file /etc/app/config.conf -> would update (content differs)
+[dry-run] ensure_service nginx -> would start
+```
+
+---
+
 ## Test Infrastructure Summary
 
 ### Directory Structure

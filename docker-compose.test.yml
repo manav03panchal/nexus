@@ -1,11 +1,11 @@
-version: "3.8"
+# Docker Compose for SSH integration tests
+# Usage: docker-compose -f docker-compose.test.yml up -d
 
 services:
-  ssh-ubuntu:
+  # SSH server with password authentication
+  ssh-password:
     image: linuxserver/openssh-server:latest
-    container_name: nexus-ssh-test
-    ports:
-      - "2222:2222"
+    container_name: nexus-ssh-password
     environment:
       - PUID=1000
       - PGID=1000
@@ -13,28 +13,35 @@ services:
       - PASSWORD_ACCESS=true
       - USER_PASSWORD=testpass
       - USER_NAME=testuser
+    ports:
+      - "2232:2222"
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "2222"]
       interval: 5s
       timeout: 3s
-      retries: 10
+      retries: 5
 
-  ssh-key-only:
+  # SSH server with key-only authentication
+  ssh-key:
     image: linuxserver/openssh-server:latest
-    container_name: nexus-ssh-key-test
-    ports:
-      - "2223:2222"
+    container_name: nexus-ssh-key
     environment:
       - PUID=1000
       - PGID=1000
       - TZ=UTC
       - PASSWORD_ACCESS=false
-      - PUBLIC_KEY_FILE=/keys/test_key.pub
       - USER_NAME=testuser
+      - PUBLIC_KEY_FILE=/keys/test_key.pub
+    ports:
+      - "2233:2222"
     volumes:
-      - ./test/support/fixtures/ssh_keys:/keys:ro
+      - ./test/fixtures/ssh_keys:/keys:ro
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "2222"]
       interval: 5s
       timeout: 3s
-      retries: 10
+      retries: 5
+
+networks:
+  default:
+    name: nexus-test-network

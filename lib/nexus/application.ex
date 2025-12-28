@@ -10,8 +10,8 @@ defmodule Nexus.Application do
   @impl true
   def start(_type, _args) do
     children = [
-      # SSH connection pool will be added in Phase 5
-      # {Nexus.SSH.Pool, []}
+      # Registry for SSH connection pools (per-host pools)
+      {Registry, keys: :unique, name: Nexus.SSH.PoolRegistry}
 
       # Telemetry will be added in Phase 8
       # {Nexus.Telemetry, []}

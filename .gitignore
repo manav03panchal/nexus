@@ -22,3 +22,7 @@ erl_crash.dump
 # Ignore package tarball (built via "mix hex.build").
 nexus-*.tar
 
+# SSH private keys (never commit these!)
+test/fixtures/ssh_keys/id_*
+test/fixtures/ssh_keys/test_key
+!test/fixtures/ssh_keys/*.pub
