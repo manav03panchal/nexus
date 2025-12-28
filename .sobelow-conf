@@ -7,6 +7,13 @@
   format: "txt",
   out: "",
   threshold: "low",
-  ignore: ["Config.HTTPS", "Config.CSP"],
+  ignore: [
+    "Config.HTTPS",
+    "Config.CSP",
+    # DSL parser intentionally evaluates user config files
+    "RCE.CodeModule",
+    # parse_file reads user-specified config paths by design
+    "Traversal.FileModule"
+  ],
   ignore_files: []
 ]
