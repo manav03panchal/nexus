@@ -4,13 +4,12 @@
 
 **Goal:** Build the production-ready core of Nexus - a distributed task runner with local execution, SSH remote execution, DAG dependencies, and comprehensive testing from day one.
 
-**Timeline:** 10 weeks  
 **Estimated LOC:** ~2,500 (production) + ~2,000 (tests)  
 **Test Coverage Target:** 80%+ from the start
 
 ---
 
-## Phase 1: Project Foundation (Week 1)
+## Phase 1: Project Foundation ✅ COMPLETE
 
 ### 1.1 Project Setup
 
@@ -41,7 +40,7 @@ defp deps do
   [
     # Core
     {:optimus, "~> 0.5"},
-    {:owl, "~> 0.13"},
+    {:owl, "~> 0.12"},
     {:sshkit, "~> 0.3"},
     {:sftp_client, "~> 2.0"},
     {:nimble_pool, "~> 1.1"},
@@ -49,14 +48,13 @@ defp deps do
     {:nimble_options, "~> 1.1"},
     {:telemetry, "~> 1.3"},
     {:telemetry_metrics, "~> 1.0"},
-    {:burrito, "~> 1.0"},
     {:fuse, "~> 2.5"},
     {:hammer, "~> 6.2"},
     
     # Dev & Test
     {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
     {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
-    {:ex_doc, "~> 0.35", only: :dev, runtime: false},
+    {:ex_doc, "~> 0.34", only: :dev, runtime: false},
     {:mox, "~> 1.2", only: :test},
     {:stream_data, "~> 1.1", only: [:dev, :test]},
     {:benchee, "~> 1.3", only: [:dev, :test]},
@@ -69,22 +67,24 @@ end
 
 ### 1.3 CI/CD Setup (.github/workflows/ci.yml)
 
-- Run unit tests on every PR
-- Run integration tests with Docker SSH
-- Dialyzer, Credo, Sobelow checks
-- Coverage reporting with Coveralls
-- Performance regression detection
+- [x] Run unit tests on every PR
+- [x] Run integration tests with Docker SSH
+- [x] Dialyzer, Credo, Sobelow checks
+- [ ] Coverage reporting with Coveralls (requires repo setup at coveralls.io)
 
 ### 1.4 Deliverables
-- [ ] `mix new nexus` with umbrella-free structure
-- [ ] All dependencies added and compiling
-- [ ] CI pipeline running (GitHub Actions)
-- [ ] Dialyzer, Credo, Sobelow passing with zero issues
-- [ ] Test scaffolding in place
+- [x] `mix new nexus` with umbrella-free structure
+- [x] All dependencies added and compiling
+- [x] CI pipeline running (GitHub Actions)
+- [x] Dialyzer, Credo, Sobelow passing with zero issues
+- [x] Test scaffolding in place
+- [x] nexus.exs.example template
+- [x] docker-compose.test.yml for SSH integration tests
+- [x] Hammer rate limiter configured
 
 ---
 
-## Phase 2: DSL & Configuration (Week 2)
+## Phase 2: DSL & Configuration 🔄 IN PROGRESS
 
 ### 2.1 Core Types
 
@@ -157,7 +157,7 @@ end
 
 ---
 
-## Phase 3: DAG Resolution (Week 3)
+## Phase 3: DAG Resolution
 
 ### 3.1 Implementation
 
@@ -202,7 +202,7 @@ end
 
 ---
 
-## Phase 4: Local Execution (Week 4)
+## Phase 4: Local Execution
 
 ### 4.1 Implementation
 
@@ -251,7 +251,7 @@ end
 
 ---
 
-## Phase 5: SSH Connection Management (Weeks 5-6)
+## Phase 5: SSH Connection Management
 
 ### 5.1 Implementation
 
@@ -350,7 +350,7 @@ services:
 
 ---
 
-## Phase 6: Pipeline Execution (Week 7)
+## Phase 6: Pipeline Execution
 
 ### 6.1 Implementation
 
@@ -412,7 +412,7 @@ end
 
 ---
 
-## Phase 7: CLI Interface (Week 8)
+## Phase 7: CLI Interface
 
 ### 7.1 Implementation
 
@@ -474,7 +474,7 @@ end
 
 ---
 
-## Phase 8: Output & Telemetry (Week 9)
+## Phase 8: Output & Telemetry
 
 ### 8.1 Implementation
 
@@ -527,7 +527,7 @@ end
 
 ---
 
-## Phase 9: Pre-flight & Dry-run (Week 9, continued)
+## Phase 9: Pre-flight & Dry-run
 
 ### 9.1 Implementation
 
@@ -564,7 +564,7 @@ end
 
 ---
 
-## Phase 10: Packaging & Polish (Week 10)
+## Phase 10: Packaging & Polish
 
 ### 10.1 Binary Packaging
 
@@ -664,24 +664,24 @@ test/
 
 ```bash
 # Unit tests only (fast, no Docker)
-mix test test/unit
+mix test --only unit
 
 # Integration tests (requires Docker)
 docker-compose -f docker-compose.test.yml up -d
-mix test test/integration
+mix test --include integration
 
 # Property tests
-mix test test/property
+mix test --only property
 
 # Performance benchmarks
 mix run test/performance/dag_benchmark.exs
 mix run test/performance/ssh_benchmark.exs
 
 # Full suite with coverage
-mix coveralls.html
+mix test --cover
 
 # CI mode (all tests)
-mix test --cover
+mix test --include integration
 ```
 
 ### Mox Behaviors
