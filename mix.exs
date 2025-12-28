@@ -1,0 +1,115 @@
+defmodule Nexus.MixProject do
+  use Mix.Project
+
+  @version "0.1.0"
+  @source_url "https://github.com/manav03panchal/nexus"
+
+  def project do
+    [
+      app: :nexus,
+      version: @version,
+      elixir: "~> 1.15",
+      start_permanent: Mix.env() == :prod,
+      deps: deps(),
+      escript: escript(),
+      aliases: aliases(),
+
+      # Test configuration
+      elixirc_paths: elixirc_paths(Mix.env()),
+      test_paths: test_paths(Mix.env()),
+      test_coverage: [tool: ExCoveralls],
+      preferred_cli_env: [
+        coveralls: :test,
+        "coveralls.detail": :test,
+        "coveralls.post": :test,
+        "coveralls.html": :test,
+        "coveralls.github": :test
+      ],
+
+      # Dialyzer
+      dialyzer: [
+        plt_file: {:no_warn, "priv/plts/dialyzer.plt"},
+        plt_add_apps: [:mix, :ex_unit],
+        flags: [
+          :error_handling,
+          :missing_return,
+          :underspecs,
+          :unknown
+        ]
+      ],
+
+      # Docs
+      name: "Nexus",
+      source_url: @source_url,
+      docs: docs()
+    ]
+  end
+
+  def application do
+    [
+      extra_applications: [:logger, :ssh, :public_key],
+      mod: {Nexus.Application, []}
+    ]
+  end
+
+  defp escript do
+    [
+      main_module: Nexus.CLI,
+      name: "nexus"
+    ]
+  end
+
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_), do: ["lib"]
+
+  defp test_paths(:test), do: ["test/unit", "test/integration", "test/property"]
+  defp test_paths(_), do: ["test"]
+
+  defp deps do
+    [
+      # Core
+      {:optimus, "~> 0.5"},
+      {:owl, "~> 0.12"},
+      {:sshkit, "~> 0.3"},
+      {:sftp_client, "~> 2.0"},
+      {:nimble_pool, "~> 1.1"},
+      {:libgraph, "~> 0.16"},
+      {:nimble_options, "~> 1.1"},
+      {:telemetry, "~> 1.3"},
+      {:telemetry_metrics, "~> 1.0"},
+      {:fuse, "~> 2.5"},
+      {:hammer, "~> 6.2"},
+
+      # Dev & Test
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:ex_doc, "~> 0.34", only: :dev, runtime: false},
+      {:mox, "~> 1.2", only: :test},
+      {:stream_data, "~> 1.1", only: [:dev, :test]},
+      {:benchee, "~> 1.3", only: [:dev, :test]},
+      {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
+      {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false},
+      {:excoveralls, "~> 0.18", only: :test}
+    ]
+  end
+
+  defp aliases do
+    [
+      setup: ["deps.get", "deps.compile"],
+      lint: ["format --check-formatted", "credo --strict", "sobelow --config"],
+      "test.unit": ["test test/unit"],
+      "test.integration": ["test test/integration"],
+      "test.property": ["test test/property"],
+      "test.all": ["test test/unit test/integration test/property"],
+      quality: ["format", "credo --strict", "dialyzer", "sobelow --config"]
+    ]
+  end
+
+  defp docs do
+    [
+      main: "readme",
+      extras: ["README.md", "CHANGELOG.md"],
+      source_ref: "v#{@version}"
+    ]
+  end
+end
