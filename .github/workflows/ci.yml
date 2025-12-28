@@ -53,16 +53,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: test
 
-    services:
-      ssh-server:
-        image: linuxserver/openssh-server:latest
-        ports:
-          - 2222:2222
-        env:
-          PASSWORD_ACCESS: "true"
-          USER_PASSWORD: testpass
-          USER_NAME: testuser
-
     steps:
       - uses: actions/checkout@v4
 
@@ -89,21 +79,32 @@ jobs:
       - name: Install dependencies
         run: mix deps.get
 
-      - name: Wait for SSH server
+      - name: Generate SSH test keys
         run: |
+          mkdir -p test/fixtures/ssh_keys
+          ssh-keygen -t ed25519 -f test/fixtures/ssh_keys/id_ed25519 -N "" -C "nexus-ci-test"
+          cp test/fixtures/ssh_keys/id_ed25519 test/fixtures/ssh_keys/test_key
+          cp test/fixtures/ssh_keys/id_ed25519.pub test/fixtures/ssh_keys/test_key.pub
+
+      - name: Start SSH containers
+        run: |
+          docker-compose -f docker-compose.test.yml up -d
+          # Wait for containers to be healthy
           for i in {1..30}; do
-            nc -z localhost 2222 && break
-            echo "Waiting for SSH server..."
-            sleep 1
+            if docker-compose -f docker-compose.test.yml ps | grep -q "healthy"; then
+              echo "SSH containers ready"
+              break
+            fi
+            echo "Waiting for SSH containers..."
+            sleep 2
           done
 
       - name: Run integration tests
         run: mix test --include integration
-        env:
-          SSH_TEST_HOST: localhost
-          SSH_TEST_PORT: 2222
-          SSH_TEST_USER: testuser
-          SSH_TEST_PASSWORD: testpass
+
+      - name: Stop SSH containers
+        if: always()
+        run: docker-compose -f docker-compose.test.yml down
 
   quality:
     name: Code Quality
