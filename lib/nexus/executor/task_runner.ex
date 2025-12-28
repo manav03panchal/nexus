@@ -204,10 +204,13 @@ defmodule Nexus.Executor.TaskRunner do
     ssh_opts = Keyword.get(opts, :ssh_opts, [])
     continue_on_error = Keyword.get(opts, :continue_on_error, false)
 
+    # Pool.checkout expects connect_opts key for SSH authentication
+    pool_opts = [connect_opts: ssh_opts]
+
     case Pool.checkout(
            host,
            &run_commands_remotely(&1, task.commands, continue_on_error),
-           ssh_opts
+           pool_opts
          ) do
       {:ok, command_results} ->
         status = if Enum.all?(command_results, &(&1.status == :ok)), do: :ok, else: :error
