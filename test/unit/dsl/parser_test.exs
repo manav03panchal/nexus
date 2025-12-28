@@ -175,7 +175,12 @@ defmodule Nexus.DSL.ParserTest do
       end
       """
 
-      assert {:error, message} = Parser.parse_string(dsl)
+      # Capture IO to suppress expected compiler warnings from Code.eval_string
+      ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        send(self(), Parser.parse_string(dsl))
+      end)
+
+      assert_receive {:error, message}
       assert message =~ "syntax error" or message =~ "error"
     end
 

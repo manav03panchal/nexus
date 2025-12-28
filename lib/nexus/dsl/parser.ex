@@ -100,10 +100,13 @@ defmodule Nexus.DSL.Parser do
 
   # Wraps the DSL content in a module that provides the DSL functions
   defp wrap_dsl(content) do
+    # Ensure we have a valid expression even for empty content
+    body = if String.trim(content) == "", do: ":ok", else: content
+
     """
     import Nexus.DSL.Parser.DSL
     Nexus.DSL.Parser.DSL.run_dsl(fn ->
-    #{content}
+    #{body}
     end)
     """
   end

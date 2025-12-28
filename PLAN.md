@@ -84,7 +84,7 @@ end
 
 ---
 
-## Phase 2: DSL & Configuration 🔄 IN PROGRESS
+## Phase 2: DSL & Configuration ✅ COMPLETE
 
 ### 2.1 Core Types
 
@@ -135,29 +135,29 @@ end
 ### 2.3 Tests Required
 
 **Unit Tests:**
-- [ ] Parse valid task definitions
-- [ ] Parse host definitions (all formats: hostname, user@host, user@host:port)
-- [ ] Parse config blocks
-- [ ] Handle env() function calls
-- [ ] Reject invalid syntax with clear errors
-- [ ] Validate task references exist
-- [ ] Validate host group references exist
+- [x] Parse valid task definitions
+- [x] Parse host definitions (all formats: hostname, user@host, user@host:port)
+- [x] Parse config blocks
+- [x] Handle env() function calls
+- [x] Reject invalid syntax with clear errors
+- [x] Validate task references exist
+- [x] Validate host group references exist
 
 **Property Tests:**
-- [ ] Any valid atom is a valid task name
-- [ ] Host string parsing roundtrips correctly
-- [ ] Config validation is deterministic
+- [x] Any valid atom is a valid task name
+- [x] Host string parsing roundtrips correctly
+- [x] Config validation is deterministic
 
 ### 2.4 Deliverables
-- [ ] `Nexus.DSL.Parser` - parse nexus.exs files
-- [ ] `Nexus.DSL.Validator` - validate configuration
-- [ ] `Nexus.Types` - typed structs for all data
-- [ ] 95%+ coverage on DSL modules
-- [ ] Property tests for parsing
+- [x] `Nexus.DSL.Parser` - parse nexus.exs files
+- [x] `Nexus.DSL.Validator` - validate configuration
+- [x] `Nexus.Types` - typed structs for all data
+- [x] 95%+ coverage on DSL modules
+- [x] Property tests for parsing
 
 ---
 
-## Phase 3: DAG Resolution
+## Phase 3: DAG Resolution ✅ COMPLETE
 
 ### 3.1 Implementation
 
@@ -175,30 +175,30 @@ end
 ### 3.2 Tests Required
 
 **Unit Tests:**
-- [ ] Build graph from tasks with deps
-- [ ] Detect circular dependencies
-- [ ] Topological sort produces valid order
-- [ ] Execution phases group independent tasks
-- [ ] Single task with no deps
-- [ ] Complex diamond dependencies
-- [ ] Long chains
+- [x] Build graph from tasks with deps
+- [x] Detect circular dependencies
+- [x] Topological sort produces valid order
+- [x] Execution phases group independent tasks
+- [x] Single task with no deps
+- [x] Complex diamond dependencies
+- [x] Long chains
 
 **Property Tests:**
-- [ ] Topological order always valid (deps before dependents)
-- [ ] Execution phases cover all tasks exactly once
-- [ ] Cycle detection is correct
+- [x] Topological order always valid (deps before dependents)
+- [x] Execution phases cover all tasks exactly once
+- [x] Cycle detection is correct
 
 **Performance Tests:**
-- [ ] 100 tasks with random deps: <100ms
-- [ ] 500 tasks: <500ms
-- [ ] 1000 tasks: <2s
+- [x] 100 tasks with random deps: ~148μs (target <100ms) ✓
+- [x] 500 tasks: ~1.15ms (target <500ms) ✓
+- [x] 1000 tasks: ~2.25ms (target <2s) ✓
 
 ### 3.3 Deliverables
-- [ ] `Nexus.DAG` module with libgraph
-- [ ] Cycle detection with helpful error messages
-- [ ] Execution phase calculation
-- [ ] 90%+ coverage
-- [ ] Benchmark suite
+- [x] `Nexus.DAG` module with libgraph
+- [x] Cycle detection with helpful error messages
+- [x] Execution phase calculation
+- [x] 90%+ coverage
+- [x] Benchmark suite
 
 ---
 
