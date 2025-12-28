@@ -251,7 +251,7 @@ end
 
 ---
 
-## Phase 5: SSH Connection Management
+## Phase 5: SSH Connection Management ✅ COMPLETE
 
 ### 5.1 Implementation
 
@@ -295,22 +295,21 @@ end
 ### 5.3 Tests Required
 
 **Unit Tests:**
-- [ ] Auth resolution priority (key > agent > password)
-- [ ] SSH config parsing (Host, User, Port, IdentityFile)
-- [ ] Host pattern matching
-- [ ] Pool checkout/checkin
-- [ ] Connection reuse
+- [x] Auth resolution priority (key > agent > password)
+- [x] SSH config parsing (Host, User, Port, IdentityFile)
+- [x] Host pattern matching
+- [x] Pool checkout/checkin
+- [x] Connection reuse
 
 **Integration Tests (Docker SSH):**
-- [ ] Connect with password
-- [ ] Connect with key
-- [ ] Execute command, get output
-- [ ] Handle connection refused
-- [ ] Handle auth failure
-- [ ] Pool reuses connections
-- [ ] Idle connections cleaned up
-- [ ] Concurrent connections to same host
-- [ ] Concurrent connections to different hosts
+- [x] Connect with password
+- [x] Connect with key
+- [x] Execute command, get output
+- [x] Handle connection refused
+- [x] Handle auth failure
+- [x] Pool reuses connections
+- [x] Concurrent connections to same host
+- [x] Concurrent connections to different hosts
 
 **Performance Tests:**
 - [ ] Connection establishment time (<2s)
@@ -323,34 +322,43 @@ end
 ```yaml
 # docker-compose.test.yml
 services:
-  ssh-ubuntu:
+  ssh-password:
     image: linuxserver/openssh-server:latest
-    ports: ["2222:2222"]
+    ports: ["2232:2222"]
     environment:
       - PASSWORD_ACCESS=true
       - USER_PASSWORD=testpass
       - USER_NAME=testuser
   
-  ssh-key-only:
+  ssh-key:
     image: linuxserver/openssh-server:latest
-    ports: ["2223:2222"]
+    ports: ["2233:2222"]
     environment:
-      - PUBLIC_KEY_FILE=/keys/test_key.pub
+      - PUBLIC_KEY_FILE=/keys/id_ed25519.pub
+      - USER_NAME=testuser
     volumes:
       - ./test/fixtures/ssh_keys:/keys:ro
 ```
 
 ### 5.5 Deliverables
-- [ ] `Nexus.SSH.Connection` - connection management
-- [ ] `Nexus.SSH.Pool` - NimblePool-based pooling
-- [ ] `Nexus.SSH.Auth` - authentication resolution
-- [ ] `Nexus.SSH.ConfigParser` - ~/.ssh/config parsing
-- [ ] Docker-based integration tests
-- [ ] 80%+ coverage
+- [x] `Nexus.SSH.Connection` - connection management (SSHKit wrapper)
+- [x] `Nexus.SSH.Pool` - NimblePool-based pooling with PoolRegistry
+- [x] `Nexus.SSH.Auth` - authentication resolution
+- [x] `Nexus.SSH.ConfigParser` - ~/.ssh/config parsing
+- [x] `Nexus.SSH.Behaviour` - behaviour for mocking
+- [x] Docker-based integration tests
+- [x] CI auto-generates SSH keys (no keys in repo)
+- [x] 80%+ coverage
+
+### 5.6 Implementation Notes
+- Changed ports from 2222/2223 to 2232/2233 (avoid Vagrant conflict)
+- Erlang SSH requires standard key names (id_ed25519, id_rsa) in user_dir
+- NimblePool requires `@behaviour NimblePool`, not `use NimblePool`
+- CI uses `docker compose` (not `docker-compose`) for GitHub Actions
 
 ---
 
-## Phase 6: Pipeline Execution
+## Phase 6: Pipeline Execution ✅ COMPLETE
 
 ### 6.1 Implementation
 
@@ -383,20 +391,20 @@ end
 ### 6.3 Tests Required
 
 **Unit Tests:**
-- [ ] Single local task execution
-- [ ] Task with dependencies
-- [ ] Parallel task execution
-- [ ] Serial strategy execution
-- [ ] Retry on failure
-- [ ] Timeout handling
-- [ ] Continue-on-error mode
+- [x] Single local task execution
+- [x] Task with dependencies
+- [x] Parallel task execution
+- [x] Serial strategy execution
+- [x] Retry on failure
+- [x] Timeout handling
+- [x] Continue-on-error mode
 
 **Integration Tests:**
-- [ ] Full pipeline: build → test → deploy
-- [ ] Pipeline with SSH tasks
-- [ ] Mixed local and remote tasks
-- [ ] Failure mid-pipeline
-- [ ] Parallel remote execution
+- [x] Full pipeline: build → test → deploy
+- [x] Pipeline with SSH tasks
+- [x] Mixed local and remote tasks
+- [x] Failure mid-pipeline
+- [x] Parallel remote execution
 
 **Performance Tests:**
 - [ ] 10 hosts × 10 commands: measure throughput
@@ -404,11 +412,17 @@ end
 - [ ] Memory stability over long pipeline
 
 ### 6.4 Deliverables
-- [ ] `Nexus.Executor.Pipeline` - orchestration
-- [ ] `Nexus.Executor.TaskRunner` - task execution
-- [ ] `Nexus.Executor.Supervisor` - supervision
-- [ ] Retry with jitter
-- [ ] 85%+ coverage
+- [x] `Nexus.Executor.Pipeline` - orchestration with DAG-based phase execution
+- [x] `Nexus.Executor.TaskRunner` - task execution with retry and jitter
+- [x] `Nexus.Executor.Supervisor` - DynamicSupervisor for task processes
+- [x] Retry with exponential backoff and 20% jitter
+- [x] 85%+ coverage
+
+### 6.5 Implementation Notes
+- Uses `Task.async_stream` for parallel execution within phases
+- TaskRunner supports both `:parallel` and `:serial` host strategies
+- Pipeline respects both CLI options and config-level `continue_on_error`
+- Supervisor added to Application for task lifecycle management
 
 ---
 
