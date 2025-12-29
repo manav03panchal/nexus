@@ -1,4 +1,46 @@
 services:
+  # Password authentication container for integration tests
+  ssh-password:
+    image: linuxserver/openssh-server:latest
+    container_name: nexus-ssh-password
+    hostname: ssh-password
+    ports:
+      - "2232:2222"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - PASSWORD_ACCESS=true
+      - USER_PASSWORD=testpass
+      - USER_NAME=testuser
+    healthcheck:
+      test: ["CMD-SHELL", "ss -tlnp | grep -q 2222 || exit 1"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 5s
+
+  # Key-only authentication container for integration tests
+  ssh-key:
+    image: linuxserver/openssh-server:latest
+    container_name: nexus-ssh-key
+    hostname: ssh-key
+    ports:
+      - "2233:2222"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - PUBLIC_KEY_FILE=/keys/id_ed25519.pub
+      - USER_NAME=testuser
+    volumes:
+      - ./test/fixtures/ssh_keys:/keys:ro
+    healthcheck:
+      test: ["CMD-SHELL", "ss -tlnp | grep -q 2222 || exit 1"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 5s
+
+  # Additional containers for pool/multi-host tests
   ssh1:
     image: linuxserver/openssh-server:latest
     container_name: nexus-ssh1
@@ -8,24 +50,34 @@ services:
     environment:
       - PUID=1000
       - PGID=1000
-      - PUBLIC_KEY_FILE=/keys/test_key.pub
+      - PASSWORD_ACCESS=true
+      - USER_PASSWORD=testpass
       - USER_NAME=testuser
-    volumes:
-      - ./test/fixtures/ssh_keys:/keys:ro
+    healthcheck:
+      test: ["CMD-SHELL", "ss -tlnp | grep -q 2222 || exit 1"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 5s
 
   ssh2:
     image: linuxserver/openssh-server:latest
     container_name: nexus-ssh2
     hostname: ssh2
     ports:
-      - "2226:2222"
+      - "2222:2222"
     environment:
       - PUID=1000
       - PGID=1000
-      - PUBLIC_KEY_FILE=/keys/test_key.pub
+      - PASSWORD_ACCESS=true
+      - USER_PASSWORD=testpass
       - USER_NAME=testuser
-    volumes:
-      - ./test/fixtures/ssh_keys:/keys:ro
+    healthcheck:
+      test: ["CMD-SHELL", "ss -tlnp | grep -q 2222 || exit 1"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 5s
 
   ssh3:
     image: linuxserver/openssh-server:latest
@@ -36,10 +88,15 @@ services:
     environment:
       - PUID=1000
       - PGID=1000
-      - PUBLIC_KEY_FILE=/keys/test_key.pub
+      - PASSWORD_ACCESS=true
+      - USER_PASSWORD=testpass
       - USER_NAME=testuser
-    volumes:
-      - ./test/fixtures/ssh_keys:/keys:ro
+    healthcheck:
+      test: ["CMD-SHELL", "ss -tlnp | grep -q 2222 || exit 1"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 5s
 
   ssh4:
     image: linuxserver/openssh-server:latest
@@ -50,10 +107,15 @@ services:
     environment:
       - PUID=1000
       - PGID=1000
-      - PUBLIC_KEY_FILE=/keys/test_key.pub
+      - PASSWORD_ACCESS=true
+      - USER_PASSWORD=testpass
       - USER_NAME=testuser
-    volumes:
-      - ./test/fixtures/ssh_keys:/keys:ro
+    healthcheck:
+      test: ["CMD-SHELL", "ss -tlnp | grep -q 2222 || exit 1"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 5s
 
   ssh5:
     image: linuxserver/openssh-server:latest
@@ -64,7 +126,12 @@ services:
     environment:
       - PUID=1000
       - PGID=1000
-      - PUBLIC_KEY_FILE=/keys/test_key.pub
+      - PASSWORD_ACCESS=true
+      - USER_PASSWORD=testpass
       - USER_NAME=testuser
-    volumes:
-      - ./test/fixtures/ssh_keys:/keys:ro
+    healthcheck:
+      test: ["CMD-SHELL", "ss -tlnp | grep -q 2222 || exit 1"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 5s

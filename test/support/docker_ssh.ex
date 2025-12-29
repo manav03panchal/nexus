@@ -4,7 +4,7 @@ defmodule Nexus.DockerSSH do
   """
 
   @default_host "localhost"
-  @default_port 2222
+  @default_port 2232
   @default_user "testuser"
   @default_password "testpass"
 

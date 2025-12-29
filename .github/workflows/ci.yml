@@ -89,8 +89,42 @@ jobs:
       - name: Start SSH containers
         run: |
           docker compose -f docker-compose.test.yml up -d
-          # Wait for containers to be ready
-          sleep 10
+          echo "Waiting for SSH containers to be ready..."
+
+          # Function to wait for SSH on a specific port
+          wait_for_ssh() {
+            local port=$1
+            local max_attempts=30
+            local attempt=1
+
+            while [ $attempt -le $max_attempts ]; do
+              if nc -z localhost $port 2>/dev/null; then
+                echo "SSH on port $port is ready (attempt $attempt)"
+                return 0
+              fi
+              echo "Waiting for SSH on port $port (attempt $attempt/$max_attempts)..."
+              sleep 2
+              attempt=$((attempt + 1))
+            done
+
+            echo "SSH on port $port failed to start after $max_attempts attempts"
+            return 1
+          }
+
+          # Wait for primary test containers (password auth on 2232, key auth on 2233)
+          wait_for_ssh 2232 || exit 1
+          wait_for_ssh 2233 || exit 1
+          # Wait for additional pool test containers
+          wait_for_ssh 2221 || exit 1
+          wait_for_ssh 2222 || exit 1
+          wait_for_ssh 2223 || exit 1
+          wait_for_ssh 2224 || exit 1
+          wait_for_ssh 2225 || exit 1
+
+          # Give SSH daemon a moment to fully initialize after port is open
+          sleep 3
+
+          echo "All SSH containers are ready!"
           docker compose -f docker-compose.test.yml ps
 
       - name: Run integration tests
