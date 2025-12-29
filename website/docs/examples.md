@@ -1,3 +1,7 @@
+---
+sidebar_position: 5
+---
+
 # Examples
 
 Real-world examples of Nexus configurations.

@@ -1,3 +1,7 @@
+---
+sidebar_position: 3
+---
+
 # Configuration Reference
 
 Nexus uses an Elixir DSL in `nexus.exs` for configuration.
