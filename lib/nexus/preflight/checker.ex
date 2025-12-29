@@ -346,49 +346,17 @@ defmodule Nexus.Preflight.Checker do
   end
 
   defp check_ssh_auth(%Host{} = host, ssh_opts) do
-    # Try to establish SSH connection
-    user = host.user || System.get_env("USER") || "root"
+    # Use the same SSH connection logic as the executor
+    alias Nexus.SSH.Connection
 
-    # Build base options - disable password prompts to avoid interactive issues
-    base_opts = [
-      user: String.to_charlist(user),
-      silently_accept_hosts: true,
-      connect_timeout: @tcp_connect_timeout
-    ]
+    connect_opts =
+      ssh_opts
+      |> Keyword.put(:silently_accept_hosts, true)
+      |> Keyword.put(:timeout, @tcp_connect_timeout)
 
-    # Check if we have explicit credentials
-    has_identity = Keyword.has_key?(ssh_opts, :identity)
-    has_password = Keyword.has_key?(ssh_opts, :password)
-
-    opts =
-      if has_identity do
-        identity_path = Keyword.get(ssh_opts, :identity)
-
-        Keyword.merge(base_opts,
-          user_dir: String.to_charlist(Path.dirname(identity_path)),
-          user_interaction: false
-        )
-      else
-        if has_password do
-          password = Keyword.get(ssh_opts, :password)
-
-          Keyword.merge(base_opts,
-            password: String.to_charlist(password),
-            user_interaction: false
-          )
-        else
-          # No explicit credentials - try SSH agent / default keys only
-          # Disable password auth to prevent interactive prompts
-          Keyword.merge(base_opts,
-            user_interaction: false,
-            auth_methods: ~c"publickey"
-          )
-        end
-      end
-
-    case :ssh.connect(String.to_charlist(host.hostname), host.port, opts) do
+    case Connection.connect(host, connect_opts) do
       {:ok, conn} ->
-        :ssh.close(conn)
+        Connection.close(conn)
         {host.name, :ok, nil}
 
       {:error, reason} ->
