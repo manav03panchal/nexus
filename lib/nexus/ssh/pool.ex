@@ -141,6 +141,12 @@ defmodule Nexus.SSH.Pool do
 
       :exit, {:noproc, _} ->
         {:error, :pool_not_started}
+
+      :exit, {:normal, _} ->
+        {:error, :pool_closed}
+
+      :exit, reason ->
+        {:error, {:pool_error, reason}}
     end
   end
 
@@ -318,6 +324,25 @@ defmodule Nexus.SSH.Pool do
   defp start_registered_pool(host, opts) do
     pool_key = pool_key(host)
 
+    # Use a lock to prevent race conditions when multiple tasks
+    # try to create a pool for the same host simultaneously
+    :global.set_lock({__MODULE__, pool_key}, [node()], 0)
+
+    try do
+      # Double-check if pool was created while we waited for lock
+      case Registry.lookup(@pool_registry, pool_key) do
+        [{pid, _}] when is_pid(pid) ->
+          if Process.alive?(pid), do: pid, else: do_start_pool(host, opts, pool_key)
+
+        _ ->
+          do_start_pool(host, opts, pool_key)
+      end
+    after
+      :global.del_lock({__MODULE__, pool_key}, [node()])
+    end
+  end
+
+  defp do_start_pool(host, opts, pool_key) do
     case start_link(host, opts) do
       {:ok, pid} ->
         # Register the pool
