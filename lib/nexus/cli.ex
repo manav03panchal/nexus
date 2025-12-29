@@ -253,8 +253,9 @@ defmodule Nexus.CLI do
     {:error, 1}
   end
 
-  # Help/version was requested
+  # Help was requested
   defp execute(:help) do
+    Optimus.parse!(optimus_config(), ["--help"])
     {:ok, 0}
   end
 
