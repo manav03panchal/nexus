@@ -72,9 +72,29 @@ asdf global elixir latest
 
 ## Installation
 
-### Method 1: From Source (Recommended)
+### Method 1: Quick Install (Recommended)
 
-Building from source gives you the latest features:
+The install script automatically clones, builds, and installs Nexus:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/manav03panchal/nexus/main/scripts/install.sh | bash
+```
+
+This will:
+1. Check for Elixir installation
+2. Clone the repository to a temp directory
+3. Build the escript binary
+4. Install to `/usr/local/bin` (or custom `NEXUS_INSTALL_DIR`)
+
+**Custom install location:**
+
+```bash
+NEXUS_INSTALL_DIR=~/.local/bin curl -fsSL https://raw.githubusercontent.com/manav03panchal/nexus/main/scripts/install.sh | bash
+```
+
+### Method 2: From Source (Manual)
+
+If you prefer to build manually:
 
 ```bash
 # Clone the repository
@@ -95,28 +115,6 @@ mkdir -p ~/.local/bin
 mv nexus ~/.local/bin/
 # Add to PATH in ~/.bashrc or ~/.zshrc:
 # export PATH="$HOME/.local/bin:$PATH"
-```
-
-### Method 2: Pre-built Binary
-
-Download a pre-built binary for your platform:
-
-```bash
-# Linux x86_64
-curl -L https://github.com/manav03panchal/nexus/releases/latest/download/nexus-linux-x86_64 -o nexus
-
-# Linux ARM64
-curl -L https://github.com/manav03panchal/nexus/releases/latest/download/nexus-linux-aarch64 -o nexus
-
-# macOS Intel
-curl -L https://github.com/manav03panchal/nexus/releases/latest/download/nexus-darwin-x86_64 -o nexus
-
-# macOS Apple Silicon
-curl -L https://github.com/manav03panchal/nexus/releases/latest/download/nexus-darwin-aarch64 -o nexus
-
-# Make executable and move to PATH
-chmod +x nexus
-sudo mv nexus /usr/local/bin/
 ```
 
 ### Verify Installation

@@ -35,15 +35,11 @@ title: Introduction
 
 ## Quick Install
 
-### From Source (Recommended)
-
 ```bash
-git clone https://github.com/manav03panchal/nexus.git
-cd nexus
-mix deps.get
-mix escript.build
-sudo mv nexus /usr/local/bin/
+curl -fsSL https://raw.githubusercontent.com/manav03panchal/nexus/main/scripts/install.sh | bash
 ```
+
+Requires [Elixir](https://elixir-lang.org/install.html) 1.15+. The script clones, builds, and installs to `/usr/local/bin`.
 
 ### Verify Installation
 
