@@ -323,8 +323,11 @@ defmodule Nexus.SSH.Connection do
   defp maybe_add_identity(opts, nil), do: opts
 
   defp maybe_add_identity(opts, identity) do
-    # Pass identity directly to SSHKit - it handles key loading via KeyCallback
-    Keyword.put(opts, :identity, Path.expand(identity))
+    # Set user_dir to the directory containing the key
+    # Erlang SSH will look for standard key names (id_rsa, id_ed25519, etc.)
+    # NOTE: Keys must be in PEM format, not OpenSSH format
+    expanded = Path.expand(identity)
+    Keyword.put(opts, :user_dir, String.to_charlist(Path.dirname(expanded)))
   end
 
   defp maybe_add_password(opts, nil), do: opts
