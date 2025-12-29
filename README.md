@@ -14,24 +14,13 @@ A distributed task runner with SSH support, DAG-based dependency resolution, and
 
 ## Installation
 
-Requires [Elixir](https://elixir-lang.org/install.html) 1.15+ (which includes Erlang/OTP).
-
-### Quick Install
+Requires [Elixir](https://elixir-lang.org/install.html) 1.15+.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/manav03panchal/nexus/main/scripts/install.sh | bash
 ```
 
-### From Source
-
-```bash
-git clone https://github.com/manav03panchal/nexus.git
-cd nexus
-./scripts/build.sh
-sudo mv nexus /usr/local/bin/
-```
-
-### Manual
+Or build from source:
 
 ```bash
 git clone https://github.com/manav03panchal/nexus.git
@@ -43,200 +32,66 @@ sudo mv nexus /usr/local/bin/
 
 ## Quick Start
 
-### 1. Create a Configuration File
+```bash
+# Create a config file
+nexus init
 
-Create `nexus.exs` in your project:
+# Edit nexus.exs, then validate
+nexus validate
+
+# List tasks
+nexus list
+
+# Run a task
+nexus run build
+```
+
+## Documentation
+
+- [Getting Started](docs/getting-started.md)
+- [Configuration Reference](docs/configuration.md)
+- [CLI Reference](docs/cli.md)
+- [Examples](docs/examples.md)
+
+## Example
 
 ```elixir
-# Define hosts
-host :web1, "deploy@192.168.1.10"
-host :web2, "deploy@192.168.1.11:2222"
+# nexus.exs
 
-# Group hosts
+host :web1, "deploy@192.168.1.10"
+host :web2, "deploy@192.168.1.11"
+
 group :web, [:web1, :web2]
 
-# Configuration
-config :nexus,
-  parallel_limit: 10,
-  default_timeout: 30_000
-
-# Define tasks
 task :build, on: :local do
-  run "mix deps.get"
-  run "mix compile"
   run "mix release"
 end
 
-task :upload, on: :web, deps: [:build] do
-  run "scp _build/prod/rel/myapp.tar.gz {host}:/opt/myapp/"
-end
-
-task :deploy, on: :web, deps: [:upload] do
-  run "cd /opt/myapp && tar -xzf myapp.tar.gz"
+task :deploy, on: :web, deps: [:build] do
   run "systemctl restart myapp", sudo: true
 end
 ```
 
-### 2. Validate Configuration
-
 ```bash
-nexus validate
-```
+$ nexus run deploy -i ~/.ssh/deploy_key
 
-### 3. Run Pre-flight Checks
+[ok] Task: build
+  Host: local (ok)
+    [+] $ mix release
+        Release created!
 
-```bash
-nexus preflight deploy
-```
+[ok] Task: deploy
+  Host: web1 (ok)
+    [+] $ systemctl restart myapp
+  Host: web2 (ok)
+    [+] $ systemctl restart myapp
 
-### 4. Execute Tasks
-
-```bash
-# Run a single task
-nexus run build
-
-# Run multiple tasks
-nexus run build deploy
-
-# Dry-run to see execution plan
-nexus run deploy --dry-run
-
-# Continue on errors
-nexus run deploy --continue-on-error
-
-# Verbose output
-nexus run deploy --verbose
-```
-
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| `nexus run <tasks>` | Execute one or more tasks |
-| `nexus list` | List all defined tasks |
-| `nexus validate` | Validate configuration file |
-| `nexus preflight <tasks>` | Run pre-flight checks |
-| `nexus init` | Create a template nexus.exs |
-| `nexus --help` | Show help |
-| `nexus --version` | Show version |
-
-## CLI Options
-
-### `nexus run`
-
-| Option | Description |
-|--------|-------------|
-| `-n, --dry-run` | Show execution plan without running |
-| `-v, --verbose` | Increase output verbosity |
-| `-q, --quiet` | Minimal output |
-| `-c, --config FILE` | Path to config file (default: nexus.exs) |
-| `-i, --identity FILE` | SSH private key file |
-| `-u, --user USER` | SSH user override |
-| `-p, --parallel-limit N` | Max parallel tasks (default: 10) |
-| `--continue-on-error` | Don't stop on task failure |
-| `--format FORMAT` | Output format: text, json |
-| `--plain` | Disable colors |
-
-## DSL Reference
-
-### Hosts
-
-```elixir
-# Simple host
-host :server1, "user@hostname"
-
-# With custom port
-host :server2, "user@hostname:2222"
-```
-
-### Groups
-
-```elixir
-group :production, [:web1, :web2, :db1]
-group :staging, [:staging1]
-```
-
-### Tasks
-
-```elixir
-task :name, on: :target, deps: [:dep1, :dep2] do
-  # Run commands
-  run "command"
-  
-  # With sudo
-  run "systemctl restart app", sudo: true
-  
-  # With timeout (ms)
-  run "long-command", timeout: 60_000
-  
-  # With retries
-  run "flaky-command", retries: 3, retry_delay: 1_000
-end
-```
-
-### Task Options
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `on` | Target host, group, or `:local` | `:local` |
-| `deps` | List of dependency task names | `[]` |
-| `timeout` | Task timeout in ms | `30_000` |
-| `strategy` | `:parallel` or `:serial` for multi-host | `:parallel` |
-
-### Configuration
-
-```elixir
-config :nexus,
-  parallel_limit: 10,        # Max concurrent tasks
-  default_timeout: 30_000,   # Default task timeout (ms)
-  ssh_options: [             # SSH connection options
-    connect_timeout: 5_000
-  ]
-```
-
-## Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `NEXUS_CONFIG` | Default config file path |
-| `NO_COLOR` | Disable colored output |
-
-## Exit Codes
-
-| Code | Description |
-|------|-------------|
-| 0 | Success |
-| 1 | General error / task failure |
-| 2 | Configuration error |
-| 3 | Connection error |
-
-## Development
-
-```bash
-# Run tests
-mix test
-
-# Run with coverage
-mix coveralls.html
-
-# Quality checks
-mix quality
-
-# Build escript
-mix escript.build
-
-# Build release binaries (requires Zig)
-MIX_ENV=prod mix release
+========================================
+Status: SUCCESS
+Duration: 2340ms
+Tasks: 2/2 succeeded
 ```
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes with tests
-4. Ensure all checks pass: `mix quality && mix test`
-5. Submit a pull request
+MIT
