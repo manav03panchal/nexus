@@ -30,16 +30,23 @@ group :production, [:web1, :web2, :web3, :db_primary, :db_replica]
 # Global settings for Nexus
 
 config :nexus,
-  # Maximum number of concurrent task executions
-  parallel_limit: 10,
+  # Default SSH user if not specified in host
+  default_user: "deploy",
 
-  # Default timeout for commands (milliseconds)
-  default_timeout: 30_000,
+  # Default SSH port
+  default_port: 22,
 
-  # SSH connection options
-  ssh_options: [
-    connect_timeout: 5_000
-  ]
+  # SSH connection timeout (milliseconds)
+  connect_timeout: 5_000,
+
+  # Default command timeout (milliseconds)
+  command_timeout: 30_000,
+
+  # Maximum SSH connections per host
+  max_connections: 10,
+
+  # Continue executing on task failure
+  continue_on_error: false
 
 # =============================================================================
 # TASKS
