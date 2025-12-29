@@ -685,8 +685,8 @@ From our test suite:
 |-----------|------|-------|
 | SSH connection | ~100ms | Includes TCP + auth |
 | Command execution overhead | ~1.5ms | After connection established |
-| DAG resolution (100 tasks) | <100ms | Using libgraph |
-| DAG resolution (1000 tasks) | <2s | Using libgraph |
+| DAG resolution (100 tasks) | &lt;100ms | Using libgraph |
+| DAG resolution (1000 tasks) | &lt;2s | Using libgraph |
 
 ### Connection Pooling Impact
 
