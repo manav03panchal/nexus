@@ -349,15 +349,42 @@ defmodule Nexus.Preflight.Checker do
     # Try to establish SSH connection
     user = host.user || System.get_env("USER") || "root"
 
+    # Build base options - disable password prompts to avoid interactive issues
+    base_opts = [
+      user: String.to_charlist(user),
+      silently_accept_hosts: true,
+      connect_timeout: @tcp_connect_timeout
+    ]
+
+    # Check if we have explicit credentials
+    has_identity = Keyword.has_key?(ssh_opts, :identity)
+    has_password = Keyword.has_key?(ssh_opts, :password)
+
     opts =
-      Keyword.merge(
-        [
-          user: String.to_charlist(user),
-          silently_accept_hosts: true,
-          connect_timeout: @tcp_connect_timeout
-        ],
-        ssh_opts
-      )
+      if has_identity do
+        identity_path = Keyword.get(ssh_opts, :identity)
+
+        Keyword.merge(base_opts,
+          user_dir: String.to_charlist(Path.dirname(identity_path)),
+          user_interaction: false
+        )
+      else
+        if has_password do
+          password = Keyword.get(ssh_opts, :password)
+
+          Keyword.merge(base_opts,
+            password: String.to_charlist(password),
+            user_interaction: false
+          )
+        else
+          # No explicit credentials - try SSH agent / default keys only
+          # Disable password auth to prevent interactive prompts
+          Keyword.merge(base_opts,
+            user_interaction: false,
+            auth_methods: ~c"publickey"
+          )
+        end
+      end
 
     case :ssh.connect(String.to_charlist(host.hostname), host.port, opts) do
       {:ok, conn} ->

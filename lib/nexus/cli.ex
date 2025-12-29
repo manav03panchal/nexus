@@ -93,6 +93,12 @@ defmodule Nexus.CLI do
               help: "SSH user",
               parser: :string
             ],
+            password: [
+              value_name: "PASSWORD",
+              long: "--password",
+              help: "SSH password (use - for prompt)",
+              parser: :string
+            ],
             parallel_limit: [
               value_name: "N",
               short: "-p",
@@ -195,6 +201,19 @@ defmodule Nexus.CLI do
               help: "Path to nexus.exs config file",
               parser: :string,
               default: "nexus.exs"
+            ],
+            identity: [
+              value_name: "FILE",
+              short: "-i",
+              long: "--identity",
+              help: "SSH private key file",
+              parser: :string
+            ],
+            password: [
+              value_name: "PASSWORD",
+              long: "--password",
+              help: "SSH password (use - for prompt)",
+              parser: :string
             ],
             skip: [
               value_name: "CHECKS",

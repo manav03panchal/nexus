@@ -20,11 +20,13 @@ defmodule Nexus.CLI.Preflight do
     plain = parsed.flags[:plain] || false
     skip_checks = parse_skip_checks(parsed.options[:skip])
     verbose = parsed.flags[:verbose] || false
+    ssh_opts = build_ssh_opts(parsed.options)
 
     opts = [
       config_path: config_path,
       tasks: task_names,
-      skip_checks: skip_checks
+      skip_checks: skip_checks,
+      ssh_opts: ssh_opts
     ]
 
     render_opts = [color: not plain]
@@ -57,6 +59,36 @@ defmodule Nexus.CLI.Preflight do
     |> Enum.map(&String.trim/1)
     |> Enum.map(&String.to_atom/1)
   end
+
+  defp build_ssh_opts(options) do
+    opts = []
+
+    opts =
+      if options[:identity] do
+        Keyword.put(opts, :identity, options[:identity])
+      else
+        opts
+      end
+
+    opts =
+      if options[:password] do
+        password = resolve_password(options[:password])
+        Keyword.put(opts, :password, password)
+      else
+        opts
+      end
+
+    opts
+  end
+
+  defp resolve_password("-") do
+    IO.write(:stderr, "SSH password: ")
+    password = IO.gets("") |> String.trim()
+    IO.write(:stderr, "\r                    \r")
+    password
+  end
+
+  defp resolve_password(password), do: password
 
   defp render_report(report, :json, _render_opts, _verbose) do
     output = %{

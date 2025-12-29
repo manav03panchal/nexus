@@ -68,8 +68,26 @@ defmodule Nexus.CLI.Run do
         opts
       end
 
+    opts =
+      if options[:password] do
+        password = resolve_password(options[:password])
+        Keyword.put(opts, :password, password)
+      else
+        opts
+      end
+
     opts
   end
+
+  defp resolve_password("-") do
+    IO.write(:stderr, "SSH password: ")
+    password = IO.gets("") |> String.trim()
+    # Clear the line
+    IO.write(:stderr, "\r                    \r")
+    password
+  end
+
+  defp resolve_password(password), do: password
 
   defp load_config(path) do
     if File.exists?(path) do
