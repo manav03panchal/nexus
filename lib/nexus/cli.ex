@@ -23,7 +23,7 @@ defmodule Nexus.CLI do
 
   """
 
-  alias Nexus.CLI.{Init, List, Run, Validate}
+  alias Nexus.CLI.{Init, List, Preflight, Run, Validate}
 
   @version Mix.Project.config()[:version] || "0.1.0"
 
@@ -99,13 +99,7 @@ defmodule Nexus.CLI do
               value_name: "FORMAT",
               long: "--format",
               help: "Output format (text, json)",
-              parser: fn s ->
-                case s do
-                  "text" -> {:ok, :text}
-                  "json" -> {:ok, :json}
-                  _ -> {:error, "must be 'text' or 'json'"}
-                end
-              end,
+              parser: &parse_format/1,
               default: :text
             ]
           ],
@@ -151,13 +145,7 @@ defmodule Nexus.CLI do
               value_name: "FORMAT",
               long: "--format",
               help: "Output format (text, json)",
-              parser: fn s ->
-                case s do
-                  "text" -> {:ok, :text}
-                  "json" -> {:ok, :json}
-                  _ -> {:error, "must be 'text' or 'json'"}
-                end
-              end,
+              parser: &parse_format/1,
               default: :text
             ]
           ],
@@ -179,6 +167,52 @@ defmodule Nexus.CLI do
               help: "Path to nexus.exs config file",
               parser: :string,
               default: "nexus.exs"
+            ]
+          ]
+        ],
+        preflight: [
+          name: "preflight",
+          about: "Run pre-flight checks before execution",
+          args: [
+            tasks: [
+              value_name: "TASKS",
+              help: "Tasks to check (optional)",
+              required: false,
+              parser: :string
+            ]
+          ],
+          options: [
+            config: [
+              value_name: "FILE",
+              short: "-c",
+              long: "--config",
+              help: "Path to nexus.exs config file",
+              parser: :string,
+              default: "nexus.exs"
+            ],
+            skip: [
+              value_name: "CHECKS",
+              long: "--skip",
+              help: "Checks to skip (comma-separated: config,hosts,ssh,tasks)",
+              parser: :string
+            ],
+            format: [
+              value_name: "FORMAT",
+              long: "--format",
+              help: "Output format (text, json)",
+              parser: &parse_format/1,
+              default: :text
+            ]
+          ],
+          flags: [
+            verbose: [
+              short: "-v",
+              long: "--verbose",
+              help: "Show detailed check results"
+            ],
+            plain: [
+              long: "--plain",
+              help: "Disable colors and formatting"
             ]
           ]
         ],
@@ -255,6 +289,10 @@ defmodule Nexus.CLI do
     Init.execute(parsed)
   end
 
+  defp execute({:ok, [:preflight], parsed}) do
+    Preflight.execute(parsed)
+  end
+
   # System.halt/1 never returns, which is expected for CLI exit behavior
   @dialyzer {:nowarn_function, exit_with_code: 1}
   defp exit_with_code({:ok, code}), do: System.halt(code)
@@ -279,4 +317,10 @@ defmodule Nexus.CLI do
   defp format_parse_error({:invalid_option, opt, reason}) do
     "Error: Invalid option '#{opt}': #{reason}"
   end
+
+  # Parser for format option (used by Optimus)
+  @doc false
+  def parse_format("text"), do: {:ok, :text}
+  def parse_format("json"), do: {:ok, :json}
+  def parse_format(_), do: {:error, "must be 'text' or 'json'"}
 end
