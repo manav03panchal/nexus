@@ -10,8 +10,6 @@ defmodule Nexus.CLITest do
       config = CLI.optimus_config()
 
       assert config.name == "nexus"
-      assert is_binary(config.description) or is_nil(config.description)
-      assert is_binary(config.version)
     end
 
     test "defines run subcommand" do

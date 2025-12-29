@@ -46,10 +46,6 @@ defmodule Nexus.CLI do
   def optimus_config do
     Optimus.new!(
       name: "nexus",
-      description: "Distributed task runner with SSH support",
-      version: @version,
-      author: "Nexus Contributors",
-      about: "Execute tasks locally or on remote hosts with dependency resolution.",
       allow_unknown_args: false,
       parse_double_dash: true,
       subcommands: [
