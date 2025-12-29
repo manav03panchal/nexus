@@ -69,6 +69,7 @@ defmodule Nexus.MixProject do
   defp deps do
     [
       # Core
+      {:jason, "~> 1.4"},
       {:optimus, "~> 0.5"},
       {:owl, "~> 0.12"},
       {:sshkit, "~> 0.3"},
