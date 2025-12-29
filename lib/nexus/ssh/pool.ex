@@ -62,8 +62,8 @@ defmodule Nexus.SSH.Pool do
   @default_idle_timeout 300_000
   @default_checkout_timeout 30_000
 
-  # Registry for managing per-host pools
-  @pool_registry Nexus.SSH.PoolRegistry
+  # ETS table for managing per-host pools
+  @pool_table :nexus_ssh_pools
 
   @doc """
   Starts a connection pool for a specific host.
@@ -171,19 +171,31 @@ defmodule Nexus.SSH.Pool do
     normalized = normalize_host(host)
     pool_key = pool_key(normalized)
 
+    # Ensure ETS table exists
+    ensure_pool_table()
+
     pool =
-      case Registry.lookup(@pool_registry, pool_key) do
-        [{pid, _}] ->
-          if Process.alive?(pid), do: pid, else: start_registered_pool(normalized, opts)
+      case :ets.lookup(@pool_table, pool_key) do
+        [{^pool_key, pid}] ->
+          if Process.alive?(pid), do: pid, else: start_registered_pool(normalized, opts, pool_key)
 
         [] ->
-          start_registered_pool(normalized, opts)
+          start_registered_pool(normalized, opts, pool_key)
       end
 
     case pool do
       {:error, reason} -> {:error, reason}
       pid when is_pid(pid) -> with_connection(pid, fun, opts)
     end
+  end
+
+  defp ensure_pool_table do
+    if :ets.whereis(@pool_table) == :undefined do
+      :ets.new(@pool_table, [:named_table, :public, :set, {:read_concurrency, true}])
+    end
+  rescue
+    # Table already exists
+    ArgumentError -> :ok
   end
 
   @doc """
@@ -211,17 +223,25 @@ defmodule Nexus.SSH.Pool do
   """
   @spec close_all() :: :ok
   def close_all do
-    @pool_registry
-    |> Registry.select([{{:_, :"$1", :_}, [], [:"$1"]}])
-    |> Enum.each(fn pid ->
-      if Process.alive?(pid) do
-        try do
-          stop(pid)
-        catch
-          :exit, _ -> :ok
-        end
-      end
-    end)
+    if :ets.whereis(@pool_table) != :undefined do
+      :ets.foldl(
+        fn {_key, pid}, :ok ->
+          if Process.alive?(pid) do
+            try do
+              stop(pid)
+            catch
+              :exit, _ -> :ok
+            end
+          end
+
+          :ok
+        end,
+        :ok,
+        @pool_table
+      )
+
+      :ets.delete_all_objects(@pool_table)
+    end
 
     :ok
   end
@@ -321,35 +341,42 @@ defmodule Nexus.SSH.Pool do
     "#{host.hostname}:#{host.port || 22}:#{host.user || "default"}"
   end
 
-  defp start_registered_pool(host, opts) do
-    pool_key = pool_key(host)
-
+  defp start_registered_pool(host, opts, pool_key) do
     # Use a lock to prevent race conditions when multiple tasks
     # try to create a pool for the same host simultaneously
-    :global.set_lock({__MODULE__, pool_key}, [node()], 0)
+    case :global.set_lock({__MODULE__, pool_key}, [node()], :infinity) do
+      true ->
+        try do
+          # Double-check if pool was created while we waited for lock
+          case :ets.lookup(@pool_table, pool_key) do
+            [{^pool_key, pid}] when is_pid(pid) ->
+              if Process.alive?(pid), do: pid, else: do_start_pool(host, opts, pool_key)
 
-    try do
-      # Double-check if pool was created while we waited for lock
-      case Registry.lookup(@pool_registry, pool_key) do
-        [{pid, _}] when is_pid(pid) ->
-          if Process.alive?(pid), do: pid, else: do_start_pool(host, opts, pool_key)
+            _ ->
+              do_start_pool(host, opts, pool_key)
+          end
+        after
+          :global.del_lock({__MODULE__, pool_key}, [node()])
+        end
 
-        _ ->
-          do_start_pool(host, opts, pool_key)
-      end
-    after
-      :global.del_lock({__MODULE__, pool_key}, [node()])
+      false ->
+        # Couldn't get lock, try lookup again
+        case :ets.lookup(@pool_table, pool_key) do
+          [{^pool_key, pid}] when is_pid(pid) and is_pid(pid) ->
+            if Process.alive?(pid), do: pid, else: {:error, :pool_unavailable}
+
+          _ ->
+            {:error, :pool_unavailable}
+        end
     end
   end
 
   defp do_start_pool(host, opts, pool_key) do
     case start_link(host, opts) do
       {:ok, pid} ->
-        # Register the pool
-        case Registry.register(@pool_registry, pool_key, pid) do
-          {:ok, _} -> pid
-          {:error, {:already_registered, existing_pid}} -> existing_pid
-        end
+        # Store in ETS - this persists beyond the calling process
+        :ets.insert(@pool_table, {pool_key, pid})
+        pid
 
       {:error, reason} ->
         {:error, reason}

@@ -10,9 +10,6 @@ defmodule Nexus.Application do
   @impl true
   def start(_type, _args) do
     children = [
-      # Registry for SSH connection pools (per-host pools)
-      {Registry, keys: :unique, name: Nexus.SSH.PoolRegistry},
-
       # Dynamic supervisor for task execution processes
       {Nexus.Executor.Supervisor, []}
 
