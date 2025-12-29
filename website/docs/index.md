@@ -44,7 +44,7 @@ Requires [Elixir](https://elixir-lang.org/install.html) 1.15+. The script clones
 ### Verify Installation
 
 ```bash
-nexus version
+nexus --version
 # nexus <version>
 ```
 
