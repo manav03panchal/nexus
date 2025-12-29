@@ -12,7 +12,7 @@ const config: Config = {
   },
 
   url: "https://humancorp.xyz",
-  baseUrl: "/nexus/",
+  baseUrl: "/",
 
   organizationName: "manav03panchal",
   projectName: "nexus",
