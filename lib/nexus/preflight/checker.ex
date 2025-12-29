@@ -347,10 +347,12 @@ defmodule Nexus.Preflight.Checker do
 
   defp check_ssh_auth(%Host{} = host, ssh_opts) do
     # Try to establish SSH connection
+    user = host.user || System.get_env("USER") || "root"
+
     opts =
       Keyword.merge(
         [
-          user: String.to_charlist(host.user),
+          user: String.to_charlist(user),
           silently_accept_hosts: true,
           connect_timeout: @tcp_connect_timeout
         ],
