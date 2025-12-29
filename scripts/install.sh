@@ -2,11 +2,17 @@
 set -euo pipefail
 
 # Nexus Installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/manav03panchal/nexus/main/scripts/install.sh | bash
+#
+# For private repos, requires GITHUB_TOKEN environment variable:
+#   GITHUB_TOKEN=ghp_xxx ./install.sh
+#
+# Or for local builds:
+#   ./scripts/build.sh
 
 REPO="manav03panchal/nexus"
 INSTALL_DIR="${NEXUS_INSTALL_DIR:-$HOME/.local/bin}"
 VERSION="${NEXUS_VERSION:-latest}"
+GITHUB_TOKEN="${GITHUB_TOKEN:-}"
 
 # Colors
 RED='\033[0;31m'
@@ -39,11 +45,29 @@ detect_platform() {
     echo "${os}-${arch}"
 }
 
+# Build auth header if token provided
+auth_header() {
+    if [[ -n "$GITHUB_TOKEN" ]]; then
+        echo "Authorization: token ${GITHUB_TOKEN}"
+    else
+        echo ""
+    fi
+}
+
 # Get latest version from GitHub
 get_latest_version() {
-    curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
-        | grep '"tag_name":' \
-        | sed -E 's/.*"([^"]+)".*/\1/'
+    local header
+    header=$(auth_header)
+
+    if [[ -n "$header" ]]; then
+        curl -fsSL -H "$header" "https://api.github.com/repos/${REPO}/releases/latest" \
+            | grep '"tag_name":' \
+            | sed -E 's/.*"([^"]+)".*/\1/'
+    else
+        curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
+            | grep '"tag_name":' \
+            | sed -E 's/.*"([^"]+)".*/\1/'
+    fi
 }
 
 # Download and install
@@ -73,9 +97,18 @@ install_nexus() {
     tmp_dir=$(mktemp -d)
     trap 'rm -rf "$tmp_dir"' EXIT
 
-    # Download
-    if ! curl -fsSL -o "${tmp_dir}/nexus" "$download_url"; then
-        error "Download failed. Check that version ${version} exists and has binaries for ${platform}."
+    # Download (with auth for private repos)
+    local header
+    header=$(auth_header)
+
+    if [[ -n "$header" ]]; then
+        if ! curl -fsSL -H "$header" -H "Accept: application/octet-stream" -o "${tmp_dir}/nexus" "$download_url"; then
+            error "Download failed. Check that version ${version} exists and has binaries for ${platform}."
+        fi
+    else
+        if ! curl -fsSL -o "${tmp_dir}/nexus" "$download_url"; then
+            error "Download failed. For private repos, set GITHUB_TOKEN environment variable."
+        fi
     fi
 
     # Make executable

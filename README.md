@@ -14,21 +14,22 @@ A distributed task runner with SSH support, DAG-based dependency resolution, and
 
 ## Installation
 
-### Quick Install (Recommended)
+### From Source (Recommended)
+
+Requires Elixir 1.15+.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/manav03panchal/nexus/main/scripts/install.sh | bash
+git clone https://github.com/manav03panchal/nexus.git
+cd nexus
+./scripts/build.sh
 ```
 
-This will download the latest binary for your platform to `~/.local/bin`.
+The `nexus` binary will be created in the current directory. Move it to your PATH:
 
-Options:
 ```bash
-# Install specific version
-NEXUS_VERSION=v0.1.0 curl -fsSL ... | bash
-
-# Install to custom directory
-NEXUS_INSTALL_DIR=/usr/local/bin curl -fsSL ... | bash
+sudo mv nexus /usr/local/bin/
+# or
+mv nexus ~/.local/bin/
 ```
 
 ### Pre-built Binaries
@@ -42,24 +43,16 @@ Download from the [releases page](https://github.com/manav03panchal/nexus/releas
 | macOS (Intel) | `nexus-darwin-x86_64` |
 | macOS (Apple Silicon) | `nexus-darwin-aarch64` |
 
-```bash
-# Example: Install on macOS Apple Silicon
-curl -fsSL -o nexus https://github.com/manav03panchal/nexus/releases/latest/download/nexus-darwin-aarch64
-chmod +x nexus
-sudo mv nexus /usr/local/bin/
-```
+### Install Script
 
-### From Source
-
-Requires Elixir 1.15+.
+For automated installation (requires `GITHUB_TOKEN` for private repos):
 
 ```bash
+# Clone and run install script
 git clone https://github.com/manav03panchal/nexus.git
 cd nexus
-./scripts/build.sh
+GITHUB_TOKEN=ghp_xxx ./scripts/install.sh
 ```
-
-The `nexus` binary will be created in the current directory.
 
 ## Quick Start
 
