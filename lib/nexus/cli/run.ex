@@ -187,6 +187,9 @@ defmodule Nexus.CLI.Run do
 
   defp print_result_text(result, opts) do
     unless opts[:quiet] do
+      # Print task output
+      print_task_results(result.task_results, opts)
+
       IO.puts("")
       IO.puts(String.duplicate("=", 40))
 
@@ -206,6 +209,58 @@ defmodule Nexus.CLI.Run do
       end
 
       IO.puts("")
+    end
+  end
+
+  defp print_task_results(task_results, opts) do
+    verbose = opts[:verbose] || false
+
+    Enum.each(task_results, fn task_result ->
+      print_task_result(task_result, verbose)
+    end)
+  end
+
+  defp print_task_result(task_result, verbose) do
+    task_name = task_result.task
+    status_marker = if task_result.status == :ok, do: "[ok]", else: "[FAILED]"
+
+    IO.puts("")
+    IO.puts("#{status_marker} Task: #{task_name}")
+
+    Enum.each(task_result.host_results, fn host_result ->
+      print_host_result(host_result, verbose)
+    end)
+  end
+
+  defp print_host_result(host_result, verbose) do
+    host_name = host_result.host
+    host_status = if host_result.status == :ok, do: "ok", else: "failed"
+
+    IO.puts("  Host: #{host_name} (#{host_status})")
+
+    Enum.each(host_result.commands, fn cmd_result ->
+      print_command_result(cmd_result, verbose)
+    end)
+  end
+
+  defp print_command_result(cmd_result, verbose) do
+    status_icon = if cmd_result.status == :ok, do: "+", else: "x"
+    IO.puts("    [#{status_icon}] $ #{cmd_result.cmd}")
+
+    output = String.trim(cmd_result.output || "")
+
+    if output != "" do
+      output
+      |> String.split("\n")
+      |> Enum.each(fn line ->
+        IO.puts("        #{line}")
+      end)
+    end
+
+    if verbose do
+      IO.puts(
+        "        (exit: #{cmd_result.exit_code}, #{cmd_result.duration_ms}ms, attempts: #{cmd_result.attempts})"
+      )
     end
   end
 
