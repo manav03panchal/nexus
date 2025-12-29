@@ -19,16 +19,14 @@ defmodule Nexus.CLI.RunTest do
       path = create_nexus_file(dir, config_content)
 
       parsed = %{
-        options: %{
-          config: path,
+        options: %{config: path, parallel_limit: 10, format: :text},
+        flags: %{
+          plain: false,
           dry_run: false,
           verbose: false,
           quiet: false,
-          continue_on_error: false,
-          parallel_limit: 10,
-          format: :text
+          continue_on_error: false
         },
-        flags: %{plain: false},
         args: %{tasks: "build"}
       }
 
@@ -55,16 +53,14 @@ defmodule Nexus.CLI.RunTest do
       path = create_nexus_file(dir, config_content)
 
       parsed = %{
-        options: %{
-          config: path,
+        options: %{config: path, parallel_limit: 10, format: :text},
+        flags: %{
+          plain: false,
           dry_run: true,
           verbose: false,
           quiet: false,
-          continue_on_error: false,
-          parallel_limit: 10,
-          format: :text
+          continue_on_error: false
         },
-        flags: %{plain: false},
         args: %{tasks: "test"}
       }
 
@@ -97,16 +93,14 @@ defmodule Nexus.CLI.RunTest do
       path = create_nexus_file(dir, config_content)
 
       parsed = %{
-        options: %{
-          config: path,
+        options: %{config: path, parallel_limit: 10, format: :text},
+        flags: %{
+          plain: false,
           dry_run: true,
           verbose: false,
           quiet: false,
-          continue_on_error: false,
-          parallel_limit: 10,
-          format: :text
+          continue_on_error: false
         },
-        flags: %{plain: false},
         args: %{tasks: "test"}
       }
 
@@ -128,16 +122,14 @@ defmodule Nexus.CLI.RunTest do
       path = create_nexus_file(dir, config_content)
 
       parsed = %{
-        options: %{
-          config: path,
+        options: %{config: path, parallel_limit: 10, format: :json},
+        flags: %{
+          plain: false,
           dry_run: true,
           verbose: false,
           quiet: false,
-          continue_on_error: false,
-          parallel_limit: 10,
-          format: :json
+          continue_on_error: false
         },
-        flags: %{plain: false},
         args: %{tasks: "build"}
       }
 
@@ -146,24 +138,22 @@ defmodule Nexus.CLI.RunTest do
           assert {:ok, 0} = Run.execute(parsed)
         end)
 
-      # Should contain JSON structure markers or inspect format
-      assert output =~ "total_tasks" or output =~ ":total_tasks"
+      # Should contain JSON structure markers
+      assert output =~ "total_tasks"
     end
 
     test "reports config file not found", %{tmp_dir: dir} do
       path = Path.join(dir, "nonexistent.exs")
 
       parsed = %{
-        options: %{
-          config: path,
+        options: %{config: path, parallel_limit: 10, format: :text},
+        flags: %{
+          plain: false,
           dry_run: false,
           verbose: false,
           quiet: false,
-          continue_on_error: false,
-          parallel_limit: 10,
-          format: :text
+          continue_on_error: false
         },
-        flags: %{plain: false},
         args: %{tasks: "build"}
       }
 
@@ -185,16 +175,14 @@ defmodule Nexus.CLI.RunTest do
       path = create_nexus_file(dir, config_content)
 
       parsed = %{
-        options: %{
-          config: path,
+        options: %{config: path, parallel_limit: 10, format: :text},
+        flags: %{
+          plain: false,
           dry_run: false,
           verbose: false,
           quiet: false,
-          continue_on_error: false,
-          parallel_limit: 10,
-          format: :text
+          continue_on_error: false
         },
-        flags: %{plain: false},
         args: %{tasks: "unknown_task"}
       }
 
@@ -216,16 +204,14 @@ defmodule Nexus.CLI.RunTest do
       path = create_nexus_file(dir, config_content)
 
       parsed = %{
-        options: %{
-          config: path,
+        options: %{config: path, parallel_limit: 10, format: :text},
+        flags: %{
+          plain: false,
           dry_run: false,
           verbose: false,
           quiet: false,
-          continue_on_error: false,
-          parallel_limit: 10,
-          format: :text
+          continue_on_error: false
         },
-        flags: %{plain: false},
         args: %{tasks: "failing"}
       }
 
@@ -247,16 +233,14 @@ defmodule Nexus.CLI.RunTest do
       path = create_nexus_file(dir, config_content)
 
       parsed = %{
-        options: %{
-          config: path,
+        options: %{config: path, parallel_limit: 10, format: :text},
+        flags: %{
+          plain: false,
           dry_run: false,
           verbose: false,
           quiet: true,
-          continue_on_error: false,
-          parallel_limit: 10,
-          format: :text
+          continue_on_error: false
         },
-        flags: %{plain: false},
         args: %{tasks: "build"}
       }
 
@@ -283,16 +267,14 @@ defmodule Nexus.CLI.RunTest do
       path = create_nexus_file(dir, config_content)
 
       parsed = %{
-        options: %{
-          config: path,
+        options: %{config: path, parallel_limit: 10, format: :text},
+        flags: %{
+          plain: false,
           dry_run: true,
           verbose: false,
           quiet: false,
-          continue_on_error: false,
-          parallel_limit: 10,
-          format: :text
+          continue_on_error: false
         },
-        flags: %{plain: false},
         args: %{tasks: "lint,build"}
       }
 
@@ -318,16 +300,14 @@ defmodule Nexus.CLI.RunTest do
       path = create_nexus_file(dir, config_content)
 
       parsed = %{
-        options: %{
-          config: path,
+        options: %{config: path, parallel_limit: 10, format: :text},
+        flags: %{
+          plain: false,
           dry_run: true,
           verbose: false,
           quiet: false,
-          continue_on_error: false,
-          parallel_limit: 10,
-          format: :text
+          continue_on_error: false
         },
-        flags: %{plain: false},
         args: %{tasks: "lint build"}
       }
 

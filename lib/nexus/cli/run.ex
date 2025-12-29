@@ -40,10 +40,10 @@ defmodule Nexus.CLI.Run do
     ssh_opts = build_ssh_opts(parsed.options)
 
     [
-      dry_run: parsed.options[:dry_run] || false,
-      verbose: parsed.options[:verbose] || false,
-      quiet: parsed.options[:quiet] || false,
-      continue_on_error: parsed.options[:continue_on_error] || false,
+      dry_run: parsed.flags[:dry_run] || false,
+      verbose: parsed.flags[:verbose] || false,
+      quiet: parsed.flags[:quiet] || false,
+      continue_on_error: parsed.flags[:continue_on_error] || false,
       parallel_limit: parsed.options[:parallel_limit] || 10,
       format: parsed.options[:format] || :text,
       plain: parsed.flags[:plain] || false,

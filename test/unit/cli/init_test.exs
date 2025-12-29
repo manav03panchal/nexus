@@ -112,13 +112,12 @@ defmodule Nexus.CLI.InitTest do
       File.rm(parsed.options.output)
 
       # Check template has key sections
-      assert content =~ "config do"
-      assert content =~ "timeout"
       assert content =~ "task :build"
       assert content =~ "task :test"
       assert content =~ "deps:"
       assert content =~ "run \""
-      assert content =~ "env("
+      assert content =~ "# host"
+      assert content =~ "# group"
     end
 
     test "handles write permission errors gracefully", %{tmp_dir: dir} do

@@ -73,29 +73,6 @@ defmodule Nexus.CLI do
               parser: :string,
               default: "nexus.exs"
             ],
-            dry_run: [
-              short: "-n",
-              long: "--dry-run",
-              help: "Show execution plan without running",
-              multiple: false
-            ],
-            verbose: [
-              short: "-v",
-              long: "--verbose",
-              help: "Increase output verbosity",
-              multiple: false
-            ],
-            quiet: [
-              short: "-q",
-              long: "--quiet",
-              help: "Minimal output",
-              multiple: false
-            ],
-            continue_on_error: [
-              long: "--continue-on-error",
-              help: "Continue executing on task failure",
-              multiple: false
-            ],
             identity: [
               value_name: "FILE",
               short: "-i",
@@ -133,6 +110,25 @@ defmodule Nexus.CLI do
             ]
           ],
           flags: [
+            dry_run: [
+              short: "-n",
+              long: "--dry-run",
+              help: "Show execution plan without running"
+            ],
+            verbose: [
+              short: "-v",
+              long: "--verbose",
+              help: "Increase output verbosity"
+            ],
+            quiet: [
+              short: "-q",
+              long: "--quiet",
+              help: "Minimal output"
+            ],
+            continue_on_error: [
+              long: "--continue-on-error",
+              help: "Continue executing on task failure"
+            ],
             plain: [
               long: "--plain",
               help: "Disable colors and formatting"
@@ -225,6 +221,15 @@ defmodule Nexus.CLI do
   defp execute({:error, errors}) do
     IO.puts(:stderr, format_parse_errors(errors))
     {:error, 1}
+  end
+
+  # Help/version was requested
+  defp execute(:help) do
+    {:ok, 0}
+  end
+
+  defp execute(:version) do
+    {:ok, 0}
   end
 
   # No subcommand - show help

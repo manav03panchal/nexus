@@ -30,17 +30,17 @@ defmodule Nexus.CLITest do
       # Options are a list
       option_names = Enum.map(run.options, & &1.name)
       assert :config in option_names
-      assert :dry_run in option_names
-      assert :verbose in option_names
-      assert :quiet in option_names
-      assert :continue_on_error in option_names
       assert :identity in option_names
       assert :user in option_names
       assert :parallel_limit in option_names
       assert :format in option_names
 
-      # Flags are a list
+      # Flags are a list (dry_run, verbose, quiet, continue_on_error moved here)
       flag_names = Enum.map(run.flags, & &1.name)
+      assert :dry_run in flag_names
+      assert :verbose in flag_names
+      assert :quiet in flag_names
+      assert :continue_on_error in flag_names
       assert :plain in flag_names
     end
 
