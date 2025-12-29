@@ -263,6 +263,7 @@ defmodule Nexus.CLI do
   end
 
   defp execute(:version) do
+    IO.puts("nexus #{@version}")
     {:ok, 0}
   end
 
