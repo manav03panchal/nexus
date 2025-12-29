@@ -35,9 +35,19 @@ defmodule Nexus.CLI do
   @spec main([String.t()]) :: no_return()
   def main(args) do
     args
+    |> maybe_convert_help()
     |> parse()
     |> execute()
     |> exit_with_code()
+  end
+
+  # Convert "subcommand --help" to "help subcommand"
+  defp maybe_convert_help(args) do
+    case args do
+      [cmd, "--help"] -> ["help", cmd]
+      [cmd, "-h"] -> ["help", cmd]
+      _ -> args
+    end
   end
 
   @doc """
@@ -253,10 +263,91 @@ defmodule Nexus.CLI do
     {:error, 1}
   end
 
-  # Help was requested
+  # Help was requested (top-level)
   defp execute(:help) do
     Optimus.parse!(optimus_config(), ["--help"])
     {:ok, 0}
+  end
+
+  # Help was requested for a subcommand
+  defp execute({:help, [subcommand_name]}) do
+    config = optimus_config()
+    subcmd = Enum.find(config.subcommands, &(&1.name == Atom.to_string(subcommand_name)))
+
+    if subcmd do
+      print_subcommand_help(subcmd)
+    else
+      IO.puts(:stderr, "Unknown command: #{subcommand_name}")
+    end
+
+    {:ok, 0}
+  end
+
+  defp execute({:help, _subcommand_path}) do
+    # Nested subcommands not supported
+    Optimus.parse!(optimus_config(), ["--help"])
+    {:ok, 0}
+  end
+
+  defp print_subcommand_help(subcmd) do
+    IO.puts(subcmd.about || subcmd.name)
+    IO.puts("")
+    print_usage(subcmd)
+    print_args(subcmd.args)
+    print_flags(subcmd.flags)
+    print_options(subcmd.options)
+    IO.puts("")
+  end
+
+  defp print_usage(subcmd) do
+    flags_str = if Enum.any?(subcmd.flags), do: " [FLAGS]", else: ""
+    opts_str = if Enum.any?(subcmd.options), do: " [OPTIONS]", else: ""
+
+    args_str =
+      Enum.map_join(subcmd.args, "", fn arg ->
+        if arg.required, do: " #{arg.value_name}", else: " [#{arg.value_name}]"
+      end)
+
+    IO.puts("USAGE:")
+    IO.puts("    nexus #{subcmd.name}#{flags_str}#{opts_str}#{args_str}")
+  end
+
+  defp print_args([]), do: :ok
+
+  defp print_args(args) do
+    IO.puts("")
+    IO.puts("ARGS:")
+
+    Enum.each(args, fn arg ->
+      IO.puts("    #{String.pad_trailing(arg.value_name, 16)} #{arg.help || ""}")
+    end)
+  end
+
+  defp print_flags([]), do: :ok
+
+  defp print_flags(flags) do
+    IO.puts("")
+    IO.puts("FLAGS:")
+
+    Enum.each(flags, fn flag ->
+      short = if flag.short, do: "#{flag.short}, ", else: "    "
+      long = flag.long || ""
+      IO.puts("    #{short}#{String.pad_trailing(long, 24)} #{flag.help || ""}")
+    end)
+  end
+
+  defp print_options([]), do: :ok
+
+  defp print_options(options) do
+    IO.puts("")
+    IO.puts("OPTIONS:")
+
+    Enum.each(options, fn opt ->
+      short = if opt.short, do: "#{opt.short}, ", else: "    "
+      long = opt.long || ""
+      default = if opt.default, do: " (default: #{opt.default})", else: ""
+      IO.puts("    #{short}#{String.pad_trailing(long, 24)} #{opt.help || ""}#{default}")
+    end)
   end
 
   defp execute(:version) do
