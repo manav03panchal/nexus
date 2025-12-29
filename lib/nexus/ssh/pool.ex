@@ -224,26 +224,26 @@ defmodule Nexus.SSH.Pool do
   @spec close_all() :: :ok
   def close_all do
     if :ets.whereis(@pool_table) != :undefined do
-      :ets.foldl(
-        fn {_key, pid}, :ok ->
-          if Process.alive?(pid) do
-            try do
-              stop(pid)
-            catch
-              :exit, _ -> :ok
-            end
-          end
-
-          :ok
-        end,
-        :ok,
-        @pool_table
-      )
-
+      :ets.foldl(&stop_pool_entry/2, :ok, @pool_table)
       :ets.delete_all_objects(@pool_table)
     end
 
     :ok
+  end
+
+  defp stop_pool_entry({_key, pid}, :ok) do
+    stop_if_alive(pid)
+    :ok
+  end
+
+  defp stop_if_alive(pid) when is_pid(pid) do
+    if Process.alive?(pid) do
+      try do
+        stop(pid)
+      catch
+        :exit, _ -> :ok
+      end
+    end
   end
 
   @doc """
@@ -345,29 +345,37 @@ defmodule Nexus.SSH.Pool do
     # Use a lock to prevent race conditions when multiple tasks
     # try to create a pool for the same host simultaneously
     case :global.set_lock({__MODULE__, pool_key}, [node()], :infinity) do
-      true ->
-        try do
-          # Double-check if pool was created while we waited for lock
-          case :ets.lookup(@pool_table, pool_key) do
-            [{^pool_key, pid}] when is_pid(pid) ->
-              if Process.alive?(pid), do: pid, else: do_start_pool(host, opts, pool_key)
+      true -> start_pool_with_lock(host, opts, pool_key)
+      false -> lookup_existing_pool(pool_key)
+    end
+  end
 
-            _ ->
-              do_start_pool(host, opts, pool_key)
-          end
-        after
-          :global.del_lock({__MODULE__, pool_key}, [node()])
-        end
+  defp start_pool_with_lock(host, opts, pool_key) do
+    # Double-check if pool was created while we waited for lock
+    result =
+      case lookup_pool(pool_key) do
+        {:ok, pid} -> pid
+        :not_found -> do_start_pool(host, opts, pool_key)
+      end
 
-      false ->
-        # Couldn't get lock, try lookup again
-        case :ets.lookup(@pool_table, pool_key) do
-          [{^pool_key, pid}] when is_pid(pid) and is_pid(pid) ->
-            if Process.alive?(pid), do: pid, else: {:error, :pool_unavailable}
+    :global.del_lock({__MODULE__, pool_key}, [node()])
+    result
+  end
 
-          _ ->
-            {:error, :pool_unavailable}
-        end
+  defp lookup_existing_pool(pool_key) do
+    case lookup_pool(pool_key) do
+      {:ok, pid} -> pid
+      :not_found -> {:error, :pool_unavailable}
+    end
+  end
+
+  defp lookup_pool(pool_key) do
+    case :ets.lookup(@pool_table, pool_key) do
+      [{^pool_key, pid}] when is_pid(pid) ->
+        if Process.alive?(pid), do: {:ok, pid}, else: :not_found
+
+      _ ->
+        :not_found
     end
   end
 
