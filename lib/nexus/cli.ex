@@ -269,6 +269,11 @@ defmodule Nexus.CLI do
     {:ok, 0}
   end
 
+  defp execute(:version) do
+    IO.puts("nexus #{@version}")
+    {:ok, 0}
+  end
+
   # Help was requested for a subcommand
   defp execute({:help, [subcommand_name]}) do
     config = optimus_config()
@@ -287,6 +292,33 @@ defmodule Nexus.CLI do
     # Nested subcommands not supported
     Optimus.parse!(optimus_config(), ["--help"])
     {:ok, 0}
+  end
+
+  # No subcommand - show help
+  defp execute({:ok, %{args: %{}, flags: %{}, options: %{}}}) do
+    Optimus.parse!(optimus_config(), ["--help"])
+    {:ok, 0}
+  end
+
+  # Subcommand execution
+  defp execute({:ok, [:run], parsed}) do
+    Run.execute(parsed)
+  end
+
+  defp execute({:ok, [:list], parsed}) do
+    List.execute(parsed)
+  end
+
+  defp execute({:ok, [:validate], parsed}) do
+    Validate.execute(parsed)
+  end
+
+  defp execute({:ok, [:init], parsed}) do
+    Init.execute(parsed)
+  end
+
+  defp execute({:ok, [:preflight], parsed}) do
+    Preflight.execute(parsed)
   end
 
   defp print_subcommand_help(subcmd) do
@@ -348,38 +380,6 @@ defmodule Nexus.CLI do
       default = if opt.default, do: " (default: #{opt.default})", else: ""
       IO.puts("    #{short}#{String.pad_trailing(long, 24)} #{opt.help || ""}#{default}")
     end)
-  end
-
-  defp execute(:version) do
-    IO.puts("nexus #{@version}")
-    {:ok, 0}
-  end
-
-  # No subcommand - show help
-  defp execute({:ok, %{args: %{}, flags: %{}, options: %{}}}) do
-    Optimus.parse!(optimus_config(), ["--help"])
-    {:ok, 0}
-  end
-
-  # Subcommand execution
-  defp execute({:ok, [:run], parsed}) do
-    Run.execute(parsed)
-  end
-
-  defp execute({:ok, [:list], parsed}) do
-    List.execute(parsed)
-  end
-
-  defp execute({:ok, [:validate], parsed}) do
-    Validate.execute(parsed)
-  end
-
-  defp execute({:ok, [:init], parsed}) do
-    Init.execute(parsed)
-  end
-
-  defp execute({:ok, [:preflight], parsed}) do
-    Preflight.execute(parsed)
   end
 
   # System.halt/1 never returns, which is expected for CLI exit behavior
