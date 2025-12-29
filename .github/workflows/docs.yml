@@ -4,8 +4,8 @@ on:
   push:
     branches: [main]
     paths:
-      - 'website/**'
-      - 'docs/**'
+      - "website/**"
+      - "docs/**"
   workflow_dispatch:
 
 permissions:
@@ -52,3 +52,14 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+  trigger-humancorp:
+    runs-on: ubuntu-latest
+    needs: deploy
+    steps:
+      - name: Trigger humancorp.xyz rebuild
+        env:
+          GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+        run: |
+          gh api repos/manav03panchal/humancorp.xyz/dispatches \
+            -f event_type=deploy-nexus
