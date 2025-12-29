@@ -575,7 +575,7 @@ nexus version
 #### Output
 
 ```
-nexus 0.1.0
+nexus <version>
 ```
 
 ---

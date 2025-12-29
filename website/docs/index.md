@@ -49,7 +49,7 @@ sudo mv nexus /usr/local/bin/
 
 ```bash
 nexus version
-# nexus 0.1.0
+# nexus <version>
 ```
 
 ## 5-Minute Quick Start

@@ -1,6 +1,22 @@
 import { themes as prismThemes } from "prism-react-renderer";
 import type { Config } from "@docusaurus/types";
 import type * as Preset from "@docusaurus/preset-classic";
+import * as fs from "fs";
+import * as path from "path";
+
+// Read version from mix.exs
+function getVersion(): string {
+  try {
+    const mixPath = path.join(__dirname, "..", "mix.exs");
+    const content = fs.readFileSync(mixPath, "utf-8");
+    const match = content.match(/@version\s+"([^"]+)"/);
+    return match ? match[1] : "0.1.0";
+  } catch {
+    return "0.1.0";
+  }
+}
+
+const NEXUS_VERSION = getVersion();
 
 const config: Config = {
   title: "Nexus",
@@ -42,13 +58,17 @@ const config: Config = {
     ],
   ],
 
+  customFields: {
+    nexusVersion: NEXUS_VERSION,
+  },
+
   themeConfig: {
     colorMode: {
       defaultMode: "dark",
       respectPrefersColorScheme: true,
     },
     navbar: {
-      title: "Nexus",
+      title: `Nexus v${NEXUS_VERSION}`,
       items: [
         {
           type: "docSidebar",

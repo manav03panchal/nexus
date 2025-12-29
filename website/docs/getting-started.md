@@ -123,7 +123,7 @@ sudo mv nexus /usr/local/bin/
 
 ```bash
 nexus version
-# Output: nexus 0.1.0
+# Output: nexus <version>
 
 nexus --help
 # Shows available commands and options
