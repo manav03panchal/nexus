@@ -12,6 +12,7 @@ defmodule Nexus.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       escript: escript(),
+      releases: releases(),
       aliases: aliases(),
 
       # Test configuration
@@ -81,6 +82,7 @@ defmodule Nexus.MixProject do
       {:telemetry_metrics, "~> 1.0"},
       {:fuse, "~> 2.5"},
       {:hammer, "~> 6.2"},
+      {:burrito, "~> 1.0"},
 
       # Dev & Test
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
@@ -112,6 +114,22 @@ defmodule Nexus.MixProject do
       main: "readme",
       extras: ["README.md", "CHANGELOG.md"],
       source_ref: "v#{@version}"
+    ]
+  end
+
+  defp releases do
+    [
+      nexus: [
+        steps: [:assemble, &Burrito.wrap/1],
+        burrito: [
+          targets: [
+            linux_x86_64: [os: :linux, cpu: :x86_64],
+            linux_aarch64: [os: :linux, cpu: :aarch64],
+            darwin_x86_64: [os: :darwin, cpu: :x86_64],
+            darwin_aarch64: [os: :darwin, cpu: :aarch64]
+          ]
+        ]
+      ]
     ]
   end
 end

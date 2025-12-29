@@ -116,7 +116,8 @@ defmodule Nexus.Preflight.Checker do
             phase: phase_num,
             tasks:
               Enum.map(phase_tasks, fn task_name ->
-                task = Enum.find(tasks_to_run, fn t -> t.name == task_name end)
+                # Look in all_tasks since phases may include dependencies
+                task = Enum.find(all_tasks, fn t -> t.name == task_name end)
                 format_task_plan(task, config)
               end)
           }

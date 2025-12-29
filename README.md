@@ -1,131 +1,209 @@
 # Nexus
 
-A distributed task runner for Elixir with SSH remote execution, DAG-based dependencies, and a simple DSL.
+A distributed task runner with SSH support, DAG-based dependency resolution, and parallel execution.
 
 ## Features
 
-- **Local & Remote Execution** - Run commands locally or on remote hosts via SSH
-- **DAG Dependencies** - Define task dependencies with automatic parallel execution
-- **Connection Pooling** - Efficient SSH connection reuse with NimblePool
-- **Retry Logic** - Exponential backoff with jitter for failed commands
-- **Simple DSL** - Define hosts, groups, and tasks in a single `nexus.exs` file
-
-## Status
-
-**Work in Progress** - Core functionality complete through Phase 6:
-
-- [x] DSL Parser & Validator
-- [x] DAG Resolution
-- [x] Local Execution
-- [x] SSH Connection Management
-- [x] Pipeline Execution
-- [ ] CLI Interface (Phase 7)
-- [ ] Output & Telemetry (Phase 8)
-- [ ] Pre-flight & Dry-run (Phase 9)
-- [ ] Binary Packaging (Phase 10)
-
-## Quick Example
-
-```elixir
-# nexus.exs
-
-config :nexus,
-  default_user: "deploy",
-  connect_timeout: 10_000
-
-host :web1, "web1.example.com"
-host :web2, "web2.example.com"
-group :web, [:web1, :web2]
-
-task :build do
-  run "mix deps.get"
-  run "mix compile"
-end
-
-task :test, deps: [:build] do
-  run "mix test"
-end
-
-task :deploy, deps: [:test], on: :web do
-  run "cd /app && git pull"
-  run "mix compile"
-  run "sudo systemctl restart myapp", sudo: true
-end
-```
+- **DAG-based dependencies** - Define task dependencies and execute in optimal order
+- **SSH remote execution** - Run commands on remote hosts with connection pooling
+- **Parallel execution** - Execute independent tasks concurrently
+- **Host groups** - Organize hosts into groups for targeted deployment
+- **Retry logic** - Automatic retries with exponential backoff
+- **Pre-flight checks** - Validate configuration and connectivity before execution
+- **Dry-run mode** - Preview execution plan without running commands
 
 ## Installation
 
+### From Source
+
+Requires Elixir 1.15+.
+
+```bash
+git clone https://github.com/manav03panchal/nexus.git
+cd nexus
+mix deps.get
+mix escript.build
+```
+
+The `nexus` binary will be created in the current directory.
+
+### Pre-built Binaries
+
+Download from the [releases page](https://github.com/manav03panchal/nexus/releases):
+
+- `nexus-linux-x86_64` - Linux (Intel/AMD 64-bit)
+- `nexus-linux-aarch64` - Linux (ARM 64-bit)
+- `nexus-darwin-x86_64` - macOS (Intel)
+- `nexus-darwin-aarch64` - macOS (Apple Silicon)
+
+## Quick Start
+
+### 1. Create a Configuration File
+
+Create `nexus.exs` in your project:
+
 ```elixir
-def deps do
-  [
-    {:nexus, "~> 0.1.0"}
-  ]
+# Define hosts
+host :web1, "deploy@192.168.1.10"
+host :web2, "deploy@192.168.1.11:2222"
+
+# Group hosts
+group :web, [:web1, :web2]
+
+# Configuration
+config :nexus,
+  parallel_limit: 10,
+  default_timeout: 30_000
+
+# Define tasks
+task :build, on: :local do
+  run "mix deps.get"
+  run "mix compile"
+  run "mix release"
+end
+
+task :upload, on: :web, deps: [:build] do
+  run "scp _build/prod/rel/myapp.tar.gz {host}:/opt/myapp/"
+end
+
+task :deploy, on: :web, deps: [:upload] do
+  run "cd /opt/myapp && tar -xzf myapp.tar.gz"
+  run "systemctl restart myapp", sudo: true
 end
 ```
 
-## Usage
+### 2. Validate Configuration
 
 ```bash
-# Run a task
-mix nexus run deploy
-
-# Dry run (show execution plan)
-mix nexus run deploy --dry-run
-
-# Run with verbose output
-mix nexus run deploy --verbose
+nexus validate
 ```
 
-## Configuration
+### 3. Run Pre-flight Checks
 
-See `nexus.exs.example` for a complete configuration reference.
+```bash
+nexus preflight deploy
+```
+
+### 4. Execute Tasks
+
+```bash
+# Run a single task
+nexus run build
+
+# Run multiple tasks
+nexus run build deploy
+
+# Dry-run to see execution plan
+nexus run deploy --dry-run
+
+# Continue on errors
+nexus run deploy --continue-on-error
+
+# Verbose output
+nexus run deploy --verbose
+```
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `nexus run <tasks>` | Execute one or more tasks |
+| `nexus list` | List all defined tasks |
+| `nexus validate` | Validate configuration file |
+| `nexus preflight <tasks>` | Run pre-flight checks |
+| `nexus init` | Create a template nexus.exs |
+| `nexus --help` | Show help |
+| `nexus --version` | Show version |
+
+## CLI Options
+
+### `nexus run`
+
+| Option | Description |
+|--------|-------------|
+| `-n, --dry-run` | Show execution plan without running |
+| `-v, --verbose` | Increase output verbosity |
+| `-q, --quiet` | Minimal output |
+| `-c, --config FILE` | Path to config file (default: nexus.exs) |
+| `-i, --identity FILE` | SSH private key file |
+| `-u, --user USER` | SSH user override |
+| `-p, --parallel-limit N` | Max parallel tasks (default: 10) |
+| `--continue-on-error` | Don't stop on task failure |
+| `--format FORMAT` | Output format: text, json |
+| `--plain` | Disable colors |
+
+## DSL Reference
 
 ### Hosts
 
 ```elixir
-# Simple hostname
-host :web1, "web1.example.com"
+# Simple host
+host :server1, "user@hostname"
 
-# With user
-host :web2, "deploy@web2.example.com"
-
-# With user and port
-host :db, "admin@db.example.com:2222"
+# With custom port
+host :server2, "user@hostname:2222"
 ```
 
 ### Groups
 
 ```elixir
-group :web, [:web1, :web2]
-group :all, [:web1, :web2, :db]
+group :production, [:web1, :web2, :db1]
+group :staging, [:staging1]
 ```
 
 ### Tasks
 
 ```elixir
-# Local task
-task :build do
-  run "mix compile"
-end
-
-# Remote task with dependencies
-task :deploy, deps: [:build], on: :web do
-  run "git pull"
-  run "mix compile"
-end
-
-# Serial execution (one host at a time)
-task :rolling_restart, on: :web, strategy: :serial do
-  run "systemctl restart app"
-end
-
-# With retries
-task :health_check, on: :web do
-  run "curl -f http://localhost:4000/health",
-    retries: 3,
-    retry_delay: 5_000
+task :name, on: :target, deps: [:dep1, :dep2] do
+  # Run commands
+  run "command"
+  
+  # With sudo
+  run "systemctl restart app", sudo: true
+  
+  # With timeout (ms)
+  run "long-command", timeout: 60_000
+  
+  # With retries
+  run "flaky-command", retries: 3, retry_delay: 1_000
 end
 ```
+
+### Task Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `on` | Target host, group, or `:local` | `:local` |
+| `deps` | List of dependency task names | `[]` |
+| `timeout` | Task timeout in ms | `30_000` |
+| `strategy` | `:parallel` or `:serial` for multi-host | `:parallel` |
+
+### Configuration
+
+```elixir
+config :nexus,
+  parallel_limit: 10,        # Max concurrent tasks
+  default_timeout: 30_000,   # Default task timeout (ms)
+  ssh_options: [             # SSH connection options
+    connect_timeout: 5_000
+  ]
+```
+
+## Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `NEXUS_CONFIG` | Default config file path |
+| `NO_COLOR` | Disable colored output |
+
+## Exit Codes
+
+| Code | Description |
+|------|-------------|
+| 0 | Success |
+| 1 | General error / task failure |
+| 2 | Configuration error |
+| 3 | Connection error |
 
 ## Development
 
@@ -133,27 +211,27 @@ end
 # Run tests
 mix test
 
-# Run with integration tests (requires Docker)
-docker compose -f docker-compose.test.yml up -d
-mix test --include integration
+# Run with coverage
+mix coveralls.html
 
-# Run quality checks
-mix format --check-formatted
-mix credo --strict
-mix dialyzer
+# Quality checks
+mix quality
+
+# Build escript
+mix escript.build
+
+# Build release binaries (requires Zig)
+MIX_ENV=prod mix release
 ```
-
-## Performance
-
-Benchmarks on M1 Pro:
-
-| Metric | Result |
-|--------|--------|
-| SSH connection | ~102ms |
-| Command overhead | ~1.4ms |
-| 10 sequential commands | ~14ms |
-| 10 parallel connections | ~177ms |
 
 ## License
 
-MIT
+MIT License - see [LICENSE](LICENSE) for details.
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes with tests
+4. Ensure all checks pass: `mix quality && mix test`
+5. Submit a pull request

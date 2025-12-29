@@ -1,105 +1,179 @@
-# Nexus Configuration File
+# Nexus Configuration Example
 # Copy this file to nexus.exs and customize for your project
 
 # =============================================================================
-# Configuration
+# HOSTS
 # =============================================================================
+# Define individual hosts with user@hostname or user@hostname:port syntax
+
+host :web1, "deploy@192.168.1.10"
+host :web2, "deploy@192.168.1.11"
+host :web3, "deploy@192.168.1.12:2222"  # Custom SSH port
+
+host :db_primary, "admin@db1.example.com"
+host :db_replica, "admin@db2.example.com"
+
+host :staging, "deploy@staging.example.com"
+
+# =============================================================================
+# GROUPS
+# =============================================================================
+# Organize hosts into logical groups for targeted execution
+
+group :web, [:web1, :web2, :web3]
+group :database, [:db_primary, :db_replica]
+group :production, [:web1, :web2, :web3, :db_primary, :db_replica]
+
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
+# Global settings for Nexus
 
 config :nexus,
-  # Default SSH user (can be overridden per host)
-  default_user: System.get_env("USER"),
+  # Maximum number of concurrent task executions
+  parallel_limit: 10,
 
-  # Default SSH port
-  default_port: 22,
+  # Default timeout for commands (milliseconds)
+  default_timeout: 30_000,
 
-  # Connection timeout in milliseconds
-  connect_timeout: 10_000,
-
-  # Command execution timeout in milliseconds
-  command_timeout: 60_000,
-
-  # Maximum concurrent connections per host
-  max_connections: 5,
-
-  # Continue executing on task failure
-  continue_on_error: false
+  # SSH connection options
+  ssh_options: [
+    connect_timeout: 5_000
+  ]
 
 # =============================================================================
-# Host Definitions
+# TASKS
 # =============================================================================
 
-# Define individual hosts
-host :web1, "web1.example.com"
-host :web2, "deploy@web2.example.com"
-host :db, "admin@db.example.com:2222"
+# -----------------------------------------------------------------------------
+# Build Tasks (Local)
+# -----------------------------------------------------------------------------
 
-# Define host groups
-group :web, [:web1, :web2]
-group :all, [:web1, :web2, :db]
-
-# =============================================================================
-# Task Definitions
-# =============================================================================
-
-# Simple local task
-task :build do
+task :deps, on: :local do
   run "mix deps.get"
-  run "mix compile"
+  run "mix deps.compile"
 end
 
-# Task with dependencies
-task :test, deps: [:build] do
+task :compile, on: :local, deps: [:deps] do
+  run "mix compile --warnings-as-errors"
+end
+
+task :test, on: :local, deps: [:compile] do
   run "mix test"
 end
 
-# Remote task on specific hosts
-task :deploy, deps: [:test], on: :web do
-  run "cd /app && git pull"
-  run "mix deps.get --only prod"
-  run "MIX_ENV=prod mix compile"
-  run "sudo systemctl restart myapp"
+task :build, on: :local, deps: [:test] do
+  run "MIX_ENV=prod mix release --overwrite"
 end
 
-# Task with sudo
+# -----------------------------------------------------------------------------
+# Deployment Tasks
+# -----------------------------------------------------------------------------
+
+task :upload, on: :web, deps: [:build] do
+  # Upload the release tarball to each web server
+  run "scp _build/prod/rel/myapp/myapp-*.tar.gz deploy@{host}:/opt/myapp/releases/"
+end
+
+task :backup, on: :web do
+  # Create backup of current version before deploying
+  run "cp -r /opt/myapp/current /opt/myapp/backup-$(date +%Y%m%d-%H%M%S)"
+end
+
+task :deploy, on: :web, deps: [:upload, :backup] do
+  # Extract and link new release
+  run "cd /opt/myapp/releases && tar -xzf myapp-*.tar.gz"
+  run "ln -sfn /opt/myapp/releases/myapp /opt/myapp/current"
+
+  # Restart the application
+  run "systemctl restart myapp", sudo: true
+
+  # Wait for health check
+  run "sleep 5 && curl -f http://localhost:4000/health"
+end
+
+task :rollback, on: :web do
+  # Quick rollback to previous version
+  run "cd /opt/myapp && rm current && mv backup-* current"
+  run "systemctl restart myapp", sudo: true
+end
+
+# -----------------------------------------------------------------------------
+# Database Tasks
+# -----------------------------------------------------------------------------
+
+task :migrate, on: :db_primary, deps: [:deploy] do
+  run "/opt/myapp/current/bin/myapp eval 'MyApp.Release.migrate()'"
+end
+
+task :db_backup, on: :db_primary do
+  run "pg_dump myapp_prod > /backups/myapp-$(date +%Y%m%d).sql"
+end
+
+# -----------------------------------------------------------------------------
+# Utility Tasks
+# -----------------------------------------------------------------------------
+
+task :status, on: :production do
+  run "systemctl status myapp"
+end
+
+task :logs, on: :web do
+  run "journalctl -u myapp -n 100 --no-pager"
+end
+
+task :disk_check, on: :production do
+  run "df -h"
+end
+
 task :restart, on: :web do
-  run "sudo systemctl restart myapp", sudo: true
+  run "systemctl restart myapp", sudo: true
 end
 
-# Task with retries
-task :health_check, on: :web do
-  run "curl -f http://localhost:4000/health",
-    retries: 3,
-    retry_delay: 5_000
+# -----------------------------------------------------------------------------
+# Full Deployment Pipeline
+# -----------------------------------------------------------------------------
+
+task :full_deploy, deps: [:deploy, :migrate] do
+  # This task has no commands - it just ensures deploy and migrate run
 end
 
-# Serial execution (one host at a time)
-task :rolling_restart, on: :web, strategy: :serial do
-  run "sudo systemctl restart myapp"
-  run "sleep 10"
-  run "curl -f http://localhost:4000/health"
-end
+# -----------------------------------------------------------------------------
+# Staging Deployment
+# -----------------------------------------------------------------------------
 
-# Database tasks
-task :db_backup, on: :db do
-  run "pg_dump myapp > /backups/myapp_$(date +%Y%m%d).sql"
-end
-
-task :db_migrate, deps: [:deploy], on: :db do
-  run "cd /app && MIX_ENV=prod mix ecto.migrate"
-end
-
-# Full deployment pipeline
-task :release, deps: [:deploy, :db_migrate] do
-  # This task runs after deploy and db_migrate complete
-  run "echo 'Deployment complete!'"
+task :staging_deploy, on: :staging, deps: [:build] do
+  run "scp _build/prod/rel/myapp/myapp-*.tar.gz deploy@staging:/opt/myapp/"
+  run "cd /opt/myapp && tar -xzf myapp-*.tar.gz"
+  run "systemctl restart myapp", sudo: true
 end
 
 # =============================================================================
-# Environment-specific overrides
+# USAGE EXAMPLES
 # =============================================================================
-
-if System.get_env("MIX_ENV") == "prod" do
-  config :nexus,
-    continue_on_error: false,
-    command_timeout: 300_000
-end
+#
+# Validate configuration:
+#   nexus validate
+#
+# List all tasks:
+#   nexus list
+#
+# Run pre-flight checks:
+#   nexus preflight deploy
+#
+# Build locally:
+#   nexus run build
+#
+# Deploy to production:
+#   nexus run full_deploy
+#
+# Deploy with dry-run first:
+#   nexus run deploy --dry-run
+#   nexus run deploy
+#
+# Check status on all production hosts:
+#   nexus run status
+#
+# View logs with verbose output:
+#   nexus run logs --verbose
+#
