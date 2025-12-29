@@ -14,44 +14,31 @@ A distributed task runner with SSH support, DAG-based dependency resolution, and
 
 ## Installation
 
-### From Source (Recommended)
+Requires [Elixir](https://elixir-lang.org/install.html) 1.15+ (which includes Erlang/OTP).
 
-Requires Elixir 1.15+.
+### Quick Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/manav03panchal/nexus/main/scripts/install.sh | bash
+```
+
+### From Source
 
 ```bash
 git clone https://github.com/manav03panchal/nexus.git
 cd nexus
 ./scripts/build.sh
-```
-
-The `nexus` binary will be created in the current directory. Move it to your PATH:
-
-```bash
 sudo mv nexus /usr/local/bin/
-# or
-mv nexus ~/.local/bin/
 ```
 
-### Pre-built Binaries
-
-Download from the [releases page](https://github.com/manav03panchal/nexus/releases):
-
-| Platform | Binary |
-|----------|--------|
-| Linux (Intel/AMD) | `nexus-linux-x86_64` |
-| Linux (ARM) | `nexus-linux-aarch64` |
-| macOS (Intel) | `nexus-darwin-x86_64` |
-| macOS (Apple Silicon) | `nexus-darwin-aarch64` |
-
-### Install Script
-
-For automated installation (requires `GITHUB_TOKEN` for private repos):
+### Manual
 
 ```bash
-# Clone and run install script
 git clone https://github.com/manav03panchal/nexus.git
 cd nexus
-GITHUB_TOKEN=ghp_xxx ./scripts/install.sh
+mix deps.get
+mix escript.build
+sudo mv nexus /usr/local/bin/
 ```
 
 ## Quick Start
