@@ -152,12 +152,29 @@ defmodule Nexus.Executor.Local do
 
     sudo_cmd =
       if user do
-        "sudo -u #{user} #{command}"
+        validated_user = validate_sudo_user!(user)
+        "sudo -u #{validated_user} #{command}"
       else
         "sudo #{command}"
       end
 
     run(sudo_cmd, opts)
+  end
+
+  # Validates sudo user to prevent command injection
+  # Unix usernames: start with letter or underscore, contain alphanumeric, underscore, or hyphen
+  @sudo_user_pattern ~r/^[a-zA-Z_][a-zA-Z0-9_-]*$/
+
+  defp validate_sudo_user!(user) when is_binary(user) do
+    if Regex.match?(@sudo_user_pattern, user) and String.length(user) <= 32 do
+      user
+    else
+      raise ArgumentError, "invalid sudo user: #{inspect(user)}"
+    end
+  end
+
+  defp validate_sudo_user!(user) do
+    raise ArgumentError, "sudo user must be a string, got: #{inspect(user)}"
   end
 
   # Private functions

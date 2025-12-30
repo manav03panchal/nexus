@@ -25,6 +25,7 @@ defmodule Nexus.Executor.TaskRunner do
 
   alias Nexus.Executor.Local
   alias Nexus.SSH.{Connection, Pool}
+  alias Nexus.Telemetry
   alias Nexus.Types.{Command, Host}
   alias Nexus.Types.Task, as: NexusTask
 
@@ -77,6 +78,7 @@ defmodule Nexus.Executor.TaskRunner do
   """
   @spec run(NexusTask.t(), [Host.t()], run_opts()) :: {:ok, task_result()} | {:error, term()}
   def run(%NexusTask{} = task, hosts, opts \\ []) do
+    Telemetry.emit_task_start(task.name, task.on)
     start_time = System.monotonic_time(:millisecond)
 
     result =
@@ -91,6 +93,7 @@ defmodule Nexus.Executor.TaskRunner do
     case result do
       {:ok, host_results} ->
         overall_status = if Enum.all?(host_results, &(&1.status == :ok)), do: :ok, else: :error
+        Telemetry.emit_task_stop(task.name, duration, overall_status)
 
         {:ok,
          %{
@@ -101,6 +104,7 @@ defmodule Nexus.Executor.TaskRunner do
          }}
 
       {:error, reason} ->
+        Telemetry.emit_task_exception(task.name, duration, :error, reason)
         {:error, reason}
     end
   end
@@ -245,16 +249,21 @@ defmodule Nexus.Executor.TaskRunner do
   end
 
   defp execute_with_retry(%Command{} = cmd, executor) do
-    execute_with_retry(cmd, executor, 1)
+    execute_with_retry(cmd, executor, 1, :local)
   end
 
-  defp execute_with_retry(%Command{} = cmd, executor, attempt) do
+  defp execute_with_retry(%Command{} = cmd, executor, attempt, host) do
+    # Only emit start event on first attempt
+    if attempt == 1, do: Telemetry.emit_command_start(cmd.cmd, host)
+
     start_time = System.monotonic_time(:millisecond)
     result = executor.(cmd)
     duration = System.monotonic_time(:millisecond) - start_time
 
     case result do
       {:ok, output, 0} ->
+        Telemetry.emit_command_stop(cmd.cmd, duration, 0)
+
         %{
           cmd: cmd.cmd,
           status: :ok,
@@ -267,8 +276,10 @@ defmodule Nexus.Executor.TaskRunner do
       {:ok, output, exit_code} ->
         if attempt <= cmd.retries do
           Process.sleep(calculate_retry_delay(cmd.retry_delay, attempt))
-          execute_with_retry(cmd, executor, attempt + 1)
+          execute_with_retry(cmd, executor, attempt + 1, host)
         else
+          Telemetry.emit_command_stop(cmd.cmd, duration, exit_code)
+
           %{
             cmd: cmd.cmd,
             status: :error,
@@ -282,8 +293,10 @@ defmodule Nexus.Executor.TaskRunner do
       {:error, reason} ->
         if attempt <= cmd.retries do
           Process.sleep(calculate_retry_delay(cmd.retry_delay, attempt))
-          execute_with_retry(cmd, executor, attempt + 1)
+          execute_with_retry(cmd, executor, attempt + 1, host)
         else
+          Telemetry.emit_command_stop(cmd.cmd, duration, -1)
+
           %{
             cmd: cmd.cmd,
             status: :error,
