@@ -274,20 +274,24 @@ defmodule Nexus.SSH.Pool do
 
   @impl NimblePool
   def init_worker(%{host: host, connect_opts: opts} = pool_state) do
-    # Lazy initialization - connection created on first checkout
-    {:ok, {host, opts, nil}, pool_state}
+    # Use async initialization to avoid blocking the pool process
+    # This allows other checkouts to proceed while connection is being established
+    {:async, fn -> async_connect(host, opts) end, pool_state}
+  end
+
+  # Async connection helper - returns worker state tuple
+  defp async_connect(host, opts) do
+    case Connection.connect(host, opts) do
+      {:ok, conn} -> {host, opts, conn}
+      {:error, _reason} -> {host, opts, nil}
+    end
   end
 
   @impl NimblePool
-  def handle_checkout(:checkout, _from, {host, opts, nil}, pool_state) do
-    # Create connection lazily
-    case Connection.connect(host, opts) do
-      {:ok, conn} ->
-        {:ok, conn, {host, opts, conn}, pool_state}
-
-      {:error, reason} ->
-        {:remove, reason, pool_state}
-    end
+  def handle_checkout(:checkout, _from, {_host, _opts, nil}, pool_state) do
+    # Worker initialized but connection failed during async init
+    # Remove this worker and let pool create a new one
+    {:remove, :connection_failed, pool_state}
   end
 
   def handle_checkout(:checkout, _from, {host, opts, conn}, pool_state) do
@@ -295,16 +299,9 @@ defmodule Nexus.SSH.Pool do
     if connection_valid?(conn) do
       {:ok, conn, {host, opts, conn}, pool_state}
     else
-      # Connection invalid, create new one
+      # Connection became invalid, close and remove worker
       Connection.close(conn)
-
-      case Connection.connect(host, opts) do
-        {:ok, new_conn} ->
-          {:ok, new_conn, {host, opts, new_conn}, pool_state}
-
-        {:error, reason} ->
-          {:remove, reason, pool_state}
-      end
+      {:remove, :connection_invalid, pool_state}
     end
   end
 
