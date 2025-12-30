@@ -430,7 +430,7 @@ end
 
 ### Connection Pooling
 
-`Nexus.SSH.Pool` uses NimblePool for efficient connection reuse:
+`Nexus.SSH.Pool` uses NimblePool for efficient connection reuse with async initialization:
 
 ```elixir
 defmodule Nexus.SSH.Pool do
@@ -451,12 +451,22 @@ defmodule Nexus.SSH.Pool do
   end
   
   @impl NimblePool
-  def handle_checkout(:checkout, _from, {host, opts, nil}, pool_state) do
-    # Lazy connection creation
+  def init_worker(%{host: host, connect_opts: opts} = pool_state) do
+    # Async initialization to avoid blocking the pool process
+    {:async, fn -> async_connect(host, opts) end, pool_state}
+  end
+  
+  defp async_connect(host, opts) do
     case Connection.connect(host, opts) do
-      {:ok, conn} -> {:ok, conn, {host, opts, conn}, pool_state}
-      {:error, reason} -> {:remove, reason, pool_state}
+      {:ok, conn} -> {host, opts, conn}
+      {:error, _reason} -> {host, opts, nil}
     end
+  end
+  
+  @impl NimblePool
+  def handle_checkout(:checkout, _from, {_host, _opts, nil}, pool_state) do
+    # Connection failed during async init, remove worker
+    {:remove, :connection_failed, pool_state}
   end
   
   def handle_checkout(:checkout, _from, {host, opts, conn}, pool_state) do
@@ -464,11 +474,7 @@ defmodule Nexus.SSH.Pool do
       {:ok, conn, {host, opts, conn}, pool_state}
     else
       Connection.close(conn)
-      # Create new connection
-      case Connection.connect(host, opts) do
-        {:ok, new_conn} -> {:ok, new_conn, {host, opts, new_conn}, pool_state}
-        {:error, reason} -> {:remove, reason, pool_state}
-      end
+      {:remove, :connection_invalid, pool_state}
     end
   end
 end
@@ -478,10 +484,11 @@ end
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Pool Registry                             │
+│                    Pool Registry (ETS)                       │
 │  "host1:22:deploy" → Pool PID                                │
 │  "host2:22:deploy" → Pool PID                                │
 │  "host3:2222:admin" → Pool PID                               │
+│  (Table created by Application, owned by supervisor)         │
 └─────────────────────────────────────────────────────────────┘
             │
             ▼
@@ -491,6 +498,10 @@ end
 │  │  Conn 1  │ │  Conn 2  │ │  Conn 3  │ │  Conn 4  │ ...    │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘        │
 │     idle        in_use       idle         idle              │
+│                                                              │
+│  - Connections created asynchronously via init_worker        │
+│  - Idle connections cleaned up via handle_ping callback      │
+│  - Invalid connections removed on next checkout              │
 └─────────────────────────────────────────────────────────────┘
 ```
 

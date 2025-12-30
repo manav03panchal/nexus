@@ -221,129 +221,27 @@ Instead, use SSH keys for automated deployments.
 
 ---
 
-## SSH Config Integration
+## SSH Config File
 
-Nexus respects your `~/.ssh/config` file for host-specific settings.
+Nexus includes an SSH config parser (`Nexus.SSH.ConfigParser`) that can parse `~/.ssh/config` files.
 
-### Supported Directives
+:::note Future Feature
 
-| Directive | Description |
-|-----------|-------------|
-| `Host` | Host pattern for matching |
-| `HostName` | Actual hostname/IP |
-| `User` | SSH username |
-| `Port` | SSH port |
-| `IdentityFile` | Path to private key |
-| `IdentitiesOnly` | Only use specified identity |
-| `ConnectTimeout` | Connection timeout |
-| `ProxyJump` | Jump host (bastion) |
-| `ProxyCommand` | Proxy command |
-| `ForwardAgent` | Forward SSH agent |
-| `StrictHostKeyChecking` | Host key verification |
+Full integration of SSH config settings (automatic lookup of `User`, `Port`, `IdentityFile`, `ProxyJump`, etc. from `~/.ssh/config`) is planned for a future release. Currently, you must specify connection details directly in `nexus.exs` or via command-line flags.
 
-### Example SSH Config
-
-```
-# ~/.ssh/config
-
-# Default settings for all hosts
-Host *
-  AddKeysToAgent yes
-  IdentitiesOnly yes
-  ServerAliveInterval 60
-  ServerAliveCountMax 3
-
-# Production web servers
-Host prod-web*
-  User deploy
-  IdentityFile ~/.ssh/prod_deploy
-  
-Host prod-web1
-  HostName 10.0.1.10
-
-Host prod-web2
-  HostName 10.0.1.11
-
-Host prod-web3
-  HostName 10.0.1.12
-  Port 2222
-
-# Staging
-Host staging-*
-  User deploy
-  IdentityFile ~/.ssh/staging_deploy
-  StrictHostKeyChecking no
-
-Host staging-web
-  HostName staging.example.com
-
-# Database servers
-Host db-*
-  User postgres
-  IdentityFile ~/.ssh/db_admin
-  
-Host db-primary
-  HostName 10.0.2.10
-
-Host db-replica
-  HostName 10.0.2.11
-
-# Jump host for private network
-Host bastion
-  HostName bastion.example.com
-  User admin
-  IdentityFile ~/.ssh/bastion_key
-
-Host private-*
-  ProxyJump bastion
-  
-Host private-app
-  HostName 192.168.1.10
-  User app
-```
-
-### Using SSH Config with Nexus
-
-When you define hosts in `nexus.exs`, Nexus will look up settings in `~/.ssh/config`:
+For now, use explicit configuration:
 
 ```elixir
-# nexus.exs
-# These hosts will use settings from ~/.ssh/config
-
-host :web1, "prod-web1"     # Uses User=deploy, IdentityFile from config
-host :web2, "prod-web2"     # Uses User=deploy, IdentityFile from config
-host :staging, "staging-web" # Uses staging settings
-host :db, "db-primary"       # Uses postgres user and db_admin key
+# nexus.exs - specify all connection details explicitly
+host :web1, "deploy@192.168.1.10"
+host :web2, "deploy@192.168.1.11:2222"
 ```
 
-### Jump Hosts (Bastion)
-
-For servers behind a bastion/jump host:
-
+```bash
+# Or use command-line flags
+nexus run deploy -i ~/.ssh/deploy_key -u deploy
 ```
-# ~/.ssh/config
-Host bastion
-  HostName bastion.example.com
-  User admin
-  IdentityFile ~/.ssh/bastion_key
-
-Host internal-*
-  ProxyJump bastion
-  User deploy
-  IdentityFile ~/.ssh/internal_key
-
-Host internal-web1
-  HostName 192.168.1.10
-
-Host internal-web2
-  HostName 192.168.1.11
-```
-
-```elixir
-# nexus.exs
-host :web1, "internal-web1"  # Connects through bastion automatically
-host :web2, "internal-web2"
-```
+:::
 
 ---
 

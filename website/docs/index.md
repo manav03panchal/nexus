@@ -45,7 +45,7 @@ Requires [Elixir](https://elixir-lang.org/install.html) 1.15+. The script clones
 
 ```bash
 nexus --version
-# nexus <version>
+# nexus 0.1.0
 ```
 
 ## 5-Minute Quick Start

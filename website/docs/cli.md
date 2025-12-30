@@ -766,36 +766,6 @@ SSH_AUTH_SOCK=/tmp/my-agent.sock nexus run deploy
 
 ---
 
-## Shell Completions
-
-Nexus provides shell completions for enhanced CLI experience.
-
-### Bash
-
-Add to `~/.bashrc`:
-
-```bash
-eval "$(nexus completions bash)"
-```
-
-### Zsh
-
-Add to `~/.zshrc`:
-
-```bash
-eval "$(nexus completions zsh)"
-```
-
-### Fish
-
-Add to `~/.config/fish/config.fish`:
-
-```fish
-nexus completions fish | source
-```
-
----
-
 ## Scripting Examples
 
 ### CI/CD Integration
