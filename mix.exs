@@ -74,7 +74,6 @@ defmodule Nexus.MixProject do
       {:optimus, "~> 0.5"},
       {:owl, "~> 0.12"},
       {:sshkit, "~> 0.3"},
-      {:sftp_client, "~> 2.0"},
       {:nimble_pool, "~> 1.1"},
       {:libgraph, "~> 0.16"},
       {:nimble_options, "~> 1.1"},

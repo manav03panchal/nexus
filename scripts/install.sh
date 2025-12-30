@@ -12,12 +12,24 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+DIM='\033[2m'
 NC='\033[0m'
 
 info() { echo -e "${BLUE}==>${NC} $1"; }
 success() { echo -e "${GREEN}==>${NC} $1"; }
 warn() { echo -e "${YELLOW}==>${NC} $1"; }
 error() { echo -e "${RED}Error:${NC} $1"; exit 1; }
+
+# Run a command silently, showing output only on failure
+run() {
+    local output
+    if ! output=$(eval "$*" 2>&1); then
+        echo ""
+        echo -e "${RED}Command failed:${NC} $*"
+        echo -e "${DIM}${output}${NC}" | tail -20
+        return 1
+    fi
+}
 
 check_dependencies() {
     if ! command -v elixir &> /dev/null; then
@@ -41,16 +53,16 @@ install_nexus() {
     trap 'rm -rf "$tmp_dir"' EXIT
 
     info "Cloning repository..."
-    git clone --depth 1 "$REPO_URL" "$tmp_dir" > /dev/null 2>&1
+    run git clone --depth 1 "$REPO_URL" "$tmp_dir" || error "Failed to clone repository"
 
     cd "$tmp_dir"
 
     info "Fetching dependencies..."
-    mix local.hex --force > /dev/null 2>&1
-    mix deps.get --only prod > /dev/null 2>&1
+    run mix local.hex --force || error "Failed to install Hex"
+    run mix deps.get --only prod || error "Failed to fetch dependencies"
 
     info "Building..."
-    MIX_ENV=prod mix escript.build > /dev/null 2>&1
+    run MIX_ENV=prod mix escript.build || error "Build failed"
 
     info "Installing to ${INSTALL_DIR}..."
     if [[ -w "$INSTALL_DIR" ]]; then
