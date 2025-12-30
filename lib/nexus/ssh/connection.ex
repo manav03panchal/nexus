@@ -325,7 +325,6 @@ defmodule Nexus.SSH.Connection do
   defp maybe_add_identity(opts, identity) do
     # Set user_dir to the directory containing the key
     # Erlang SSH will look for standard key names (id_rsa, id_ed25519, etc.)
-    # NOTE: Keys must be in PEM format, not OpenSSH format
     expanded = Path.expand(identity)
     Keyword.put(opts, :user_dir, String.to_charlist(Path.dirname(expanded)))
   end

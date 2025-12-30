@@ -35,43 +35,13 @@ SSH keys provide secure, password-less authentication.
 
 | Type | File | Recommendation |
 |------|------|----------------|
-| RSA | `id_rsa` | **Recommended for Nexus** - Must be PEM format |
-| ECDSA | `id_ecdsa` | Good - Must be PEM format |
-| Ed25519 | `id_ed25519` | Requires PEM format (see note below) |
+| Ed25519 | `id_ed25519` | **Recommended** - Most secure, best performance |
+| ECDSA | `id_ecdsa` | Good - Modern standard |
+| RSA | `id_rsa` | Good - Widely supported |
 | DSA | `id_dsa` | Not recommended - Deprecated |
 
-:::warning Key Format Requirement
-
-**Nexus requires keys in PEM format**, not the newer OpenSSH format.
-
-- **PEM format**: `-----BEGIN RSA PRIVATE KEY-----`
-- **OpenSSH format**: `-----BEGIN OPENSSH PRIVATE KEY-----` (NOT supported)
-
-Nexus uses Erlang's SSH library internally, which cannot read OpenSSH format keys.
-
-**Check your key format:**
-```bash
-head -1 ~/.ssh/id_rsa
-# If it shows "-----BEGIN OPENSSH PRIVATE KEY-----", convert it
-```
-
-**Convert to PEM format:**
-```bash
-# Convert RSA key to PEM (backup first!)
-cp ~/.ssh/id_rsa ~/.ssh/id_rsa.backup
-ssh-keygen -p -m PEM -f ~/.ssh/id_rsa -N ""
-
-# Verify conversion
-head -1 ~/.ssh/id_rsa
-# Should show: -----BEGIN RSA PRIVATE KEY-----
-```
-
-**Note:** Ed25519 keys cannot be converted to PEM format. If you're using Ed25519, generate an RSA key for Nexus:
-```bash
-ssh-keygen -t rsa -b 4096 -m PEM -f ~/.ssh/nexus_deploy -N ""
-ssh-copy-id -i ~/.ssh/nexus_deploy.pub user@server
-nexus run deploy -i ~/.ssh/nexus_deploy
-```
+:::tip Key Recommendations
+Ed25519 keys are recommended for best security and performance. All modern key formats (PEM and OpenSSH) are supported.
 :::
 
 #### Generating Keys
@@ -511,16 +481,9 @@ Error: {:auth_failed, "192.168.1.10"}
 - Key not in authorized_keys
 - Wrong username
 - Key permissions
-- **Key in OpenSSH format instead of PEM format**
 
 **Solutions:**
 ```bash
-# FIRST: Check key format (most common issue!)
-head -1 ~/.ssh/id_rsa
-# If it shows "-----BEGIN OPENSSH PRIVATE KEY-----", convert it:
-cp ~/.ssh/id_rsa ~/.ssh/id_rsa.backup
-ssh-keygen -p -m PEM -f ~/.ssh/id_rsa -N ""
-
 # Test with verbose SSH
 ssh -vvv deploy@192.168.1.10
 
@@ -538,28 +501,6 @@ ls -la ~/.ssh/
 
 # Try specific key
 nexus run deploy -i ~/.ssh/specific_key
-```
-
-### OpenSSH Key Format Error
-
-```
-Unable to connect using the available authentication methods
-```
-
-This usually means your key is in OpenSSH format, which Nexus cannot read.
-
-**Solution:**
-```bash
-# Check format
-head -1 ~/.ssh/id_rsa
-
-# If "-----BEGIN OPENSSH PRIVATE KEY-----", convert to PEM:
-ssh-keygen -p -m PEM -f ~/.ssh/id_rsa -N ""
-
-# For Ed25519 keys (can't convert), create RSA key:
-ssh-keygen -t rsa -b 4096 -m PEM -f ~/.ssh/nexus_key -N ""
-ssh-copy-id -i ~/.ssh/nexus_key.pub user@server
-nexus run deploy -i ~/.ssh/nexus_key
 ```
 
 ### Connection Timeout
