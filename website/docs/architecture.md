@@ -10,32 +10,43 @@ Deep dive into Nexus internals: how it parses configurations, resolves dependenc
 
 Nexus is built with a modular architecture following Elixir/OTP best practices:
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                           CLI Layer                              │
-│  Nexus.CLI → Nexus.CLI.{Run, List, Validate, Init, Preflight}   │
-└─────────────────────────────────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                      Configuration Layer                         │
-│         Nexus.DSL.Parser → Nexus.DSL.Validator                   │
-│                    Nexus.Types.*                                 │
-└─────────────────────────────────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                       Execution Layer                            │
-│     Nexus.DAG → Nexus.Executor.Pipeline → TaskRunner             │
-└─────────────────────────────────────────────────────────────────┘
-                                │
-                    ┌───────────┴───────────┐
-                    ▼                       ▼
-┌───────────────────────────┐   ┌───────────────────────────────┐
-│      Local Executor       │   │        SSH Layer              │
-│   Nexus.Executor.Local    │   │  Nexus.SSH.{Connection,Pool}  │
-│                           │   │  Nexus.SSH.{Auth,ConfigParser}│
-└───────────────────────────┘   └───────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph CLI["CLI Layer"]
+        cli["Nexus.CLI"]
+        cli_cmds["Run | List | Validate | Init | Preflight"]
+        cli --> cli_cmds
+    end
+
+    subgraph Config["Configuration Layer"]
+        parser["Nexus.DSL.Parser"]
+        validator["Nexus.DSL.Validator"]
+        types["Nexus.Types.*"]
+        parser --> validator
+        validator --> types
+    end
+
+    subgraph Exec["Execution Layer"]
+        dag["Nexus.DAG"]
+        pipeline["Nexus.Executor.Pipeline"]
+        runner["TaskRunner"]
+        dag --> pipeline --> runner
+    end
+
+    subgraph Local["Local Executor"]
+        local["Nexus.Executor.Local"]
+    end
+
+    subgraph SSH["SSH Layer"]
+        conn["Nexus.SSH.Connection"]
+        pool["Nexus.SSH.Pool"]
+        auth["Nexus.SSH.Auth"]
+        sshconfig["Nexus.SSH.ConfigParser"]
+    end
+
+    CLI --> Config --> Exec
+    Exec --> Local
+    Exec --> SSH
 ```
 
 ## Module Overview
@@ -276,21 +287,30 @@ The pipeline executor (`Nexus.Executor.Pipeline`) orchestrates task execution.
 
 ### Execution Flow
 
-```
-1. Build execution plan
-   └── Resolve target tasks and dependencies
-   └── Build DAG and compute phases
+```mermaid
+flowchart TD
+    subgraph Step1["1. Build Execution Plan"]
+        resolve["Resolve target tasks & dependencies"]
+        dag["Build DAG & compute phases"]
+        resolve --> dag
+    end
 
-2. Execute phases sequentially
-   └── For each phase:
-       └── Run tasks in parallel (up to parallel_limit)
-       └── For each task:
-           └── Resolve hosts
-           └── Use TaskRunner to execute
+    subgraph Step2["2. Execute Phases Sequentially"]
+        phase["For each phase"]
+        parallel["Run tasks in parallel<br/>(up to parallel_limit)"]
+        task["For each task"]
+        hosts["Resolve hosts"]
+        runner["Use TaskRunner to execute"]
+        phase --> parallel --> task --> hosts --> runner
+    end
 
-3. Aggregate results
-   └── Track success/failure counts
-   └── Handle continue_on_error
+    subgraph Step3["3. Aggregate Results"]
+        track["Track success/failure counts"]
+        handle["Handle continue_on_error"]
+        track --> handle
+    end
+
+    Step1 --> Step2 --> Step3
 ```
 
 ### Code Flow
@@ -476,22 +496,23 @@ end
 
 ### Pool Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Pool Registry                             │
-│  "host1:22:deploy" → Pool PID                                │
-│  "host2:22:deploy" → Pool PID                                │
-│  "host3:2222:admin" → Pool PID                               │
-└─────────────────────────────────────────────────────────────┘
-            │
-            ▼
-┌─────────────────────────────────────────────────────────────┐
-│                   NimblePool per Host                        │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐        │
-│  │  Conn 1  │ │  Conn 2  │ │  Conn 3  │ │  Conn 4  │ ...    │
-│  └──────────┘ └──────────┘ └──────────┘ └──────────┘        │
-│     idle        in_use       idle         idle              │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph Registry["Pool Registry"]
+        r1["host1:22:deploy → Pool PID"]
+        r2["host2:22:deploy → Pool PID"]
+        r3["host3:2222:admin → Pool PID"]
+    end
+
+    subgraph Pool["NimblePool per Host"]
+        c1["Conn 1<br/>idle"]
+        c2["Conn 2<br/>in_use"]
+        c3["Conn 3<br/>idle"]
+        c4["Conn 4<br/>idle"]
+        c5["..."]
+    end
+
+    Registry --> Pool
 ```
 
 ### Authentication Resolution
@@ -657,20 +678,23 @@ end
 
 ### Error Propagation
 
-```
-Command fails
-    ↓
-TaskRunner records failure, optionally retries
-    ↓
-If retries exhausted, mark command as failed
-    ↓
-If continue_on_error is false, stop task
-    ↓
-Pipeline receives task failure
-    ↓
-If continue_on_error is false, stop pipeline
-    ↓
-CLI displays error and exits with code 1
+```mermaid
+flowchart TD
+    A["Command fails"] --> B["TaskRunner records failure"]
+    B --> C{"Retries left?"}
+    C -->|Yes| D["Retry with backoff"]
+    D --> A
+    C -->|No| E["Mark command as failed"]
+    E --> F{"continue_on_error?"}
+    F -->|No| G["Stop task"]
+    F -->|Yes| H["Continue task"]
+    G --> I["Pipeline receives failure"]
+    H --> I
+    I --> J{"continue_on_error?"}
+    J -->|No| K["Stop pipeline"]
+    J -->|Yes| L["Continue pipeline"]
+    K --> M["CLI exits with code 1"]
+    L --> N["CLI reports partial failure"]
 ```
 
 ---

@@ -323,16 +323,15 @@ Nexus maintains connection pools to improve performance.
 
 ### How Pooling Works
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│                      Pool per Host                            │
-│  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐          │
-│  │ Conn 1  │  │ Conn 2  │  │ Conn 3  │  │ Conn 4  │  ...     │
-│  │  idle   │  │ in use  │  │  idle   │  │  idle   │          │
-│  └─────────┘  └─────────┘  └─────────┘  └─────────┘          │
-│                                                               │
-│  Pool Size: max_connections (default: 5)                      │
-└──────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    subgraph Pool["Pool per Host (max_connections: 5)"]
+        c1["Conn 1<br/>idle"]
+        c2["Conn 2<br/>in use"]
+        c3["Conn 3<br/>idle"]
+        c4["Conn 4<br/>idle"]
+        c5["..."]
+    end
 ```
 
 ### Pool Configuration
