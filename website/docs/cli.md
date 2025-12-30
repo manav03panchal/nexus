@@ -65,6 +65,7 @@ nexus run <tasks> [options]
 | `--continue-on-error` | | | Continue executing if a task fails |
 | `--identity FILE` | `-i` | | SSH private key file |
 | `--user USER` | `-u` | | SSH username |
+| `--password PASSWORD` | | | SSH password (use `-` for interactive prompt) |
 | `--parallel-limit N` | `-p` | `10` | Maximum concurrent tasks |
 | `--format FORMAT` | | `text` | Output format: `text` or `json` |
 | `--plain` | | | Disable colors and formatting |
@@ -263,32 +264,40 @@ Groups: 2
 
 ```json
 {
-  "tasks": [
-    {
-      "name": "deps",
+  "tasks": {
+    "deps": {
       "on": "local",
       "deps": [],
       "commands": 1,
       "strategy": "parallel"
     },
-    {
-      "name": "compile",
+    "compile": {
       "on": "local",
       "deps": ["deps"],
       "commands": 1,
       "strategy": "parallel"
     },
-    {
-      "name": "deploy",
+    "deploy": {
       "on": "webservers",
       "deps": ["test"],
       "commands": 3,
       "strategy": "parallel"
     }
-  ],
-  "hosts": ["web1", "web2", "web3"],
+  },
+  "hosts": {
+    "web1": {
+      "hostname": "192.168.1.10",
+      "user": "deploy",
+      "port": 22
+    },
+    "web2": {
+      "hostname": "192.168.1.11",
+      "user": "deploy",
+      "port": 22
+    }
+  },
   "groups": {
-    "webservers": ["web1", "web2", "web3"]
+    "webservers": ["web1", "web2"]
   }
 }
 ```
@@ -375,6 +384,8 @@ nexus preflight [tasks] [options]
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
 | `--config FILE` | `-c` | `nexus.exs` | Path to configuration file |
+| `--identity FILE` | `-i` | | SSH private key file |
+| `--password PASSWORD` | | | SSH password (use `-` for interactive prompt) |
 | `--skip CHECKS` | | | Checks to skip (comma-separated: `config,hosts,ssh,tasks`) |
 | `--verbose` | `-v` | | Show detailed check results |
 | `--format FORMAT` | | `text` | Output format: `text` or `json` |
@@ -483,27 +494,52 @@ Pre-flight Checks
     {
       "name": "config",
       "status": "passed",
-      "message": "Configuration is valid",
-      "details": {
-        "tasks": 8,
-        "hosts": 5,
-        "groups": 3
-      }
+      "message": "Configuration is valid"
     },
     {
       "name": "hosts",
       "status": "passed",
-      "message": "All 5 host(s) reachable",
-      "details": [
-        {"host": "web1", "status": "reachable"},
-        {"host": "web2", "status": "reachable"}
-      ]
+      "message": "All 5 host(s) reachable"
+    },
+    {
+      "name": "ssh",
+      "status": "passed",
+      "message": "SSH authentication OK for 5 host(s)"
+    },
+    {
+      "name": "tasks",
+      "status": "passed",
+      "message": "8 task(s) available"
     }
   ],
   "execution_plan": [
     {
       "phase": 1,
-      "tasks": [{"name": "deps", "on": "local", "commands": 1}]
+      "tasks": [
+        {
+          "name": "deps",
+          "on": "local",
+          "hosts": ["local"],
+          "commands": 1,
+          "strategy": "parallel",
+          "deps": [],
+          "timeout": 300000
+        }
+      ]
+    },
+    {
+      "phase": 2,
+      "tasks": [
+        {
+          "name": "compile",
+          "on": "local",
+          "hosts": ["local"],
+          "commands": 1,
+          "strategy": "parallel",
+          "deps": ["deps"],
+          "timeout": 300000
+        }
+      ]
     }
   ]
 }
@@ -562,14 +598,14 @@ Error: nexus.exs already exists. Use --force to overwrite.
 
 ---
 
-### nexus version
+### nexus --version
 
 Display version information.
 
 #### Syntax
 
 ```bash
-nexus version
+nexus --version
 ```
 
 #### Output
@@ -587,8 +623,8 @@ Display help information.
 #### Syntax
 
 ```bash
-nexus help [command]
 nexus --help
+nexus help <command>
 nexus <command> --help
 ```
 
@@ -596,7 +632,6 @@ nexus <command> --help
 
 ```bash
 # General help
-nexus help
 nexus --help
 
 # Command-specific help
@@ -762,36 +797,6 @@ NO_COLOR=1 nexus run deploy
 
 # Use specific SSH agent
 SSH_AUTH_SOCK=/tmp/my-agent.sock nexus run deploy
-```
-
----
-
-## Shell Completions
-
-Nexus provides shell completions for enhanced CLI experience.
-
-### Bash
-
-Add to `~/.bashrc`:
-
-```bash
-eval "$(nexus completions bash)"
-```
-
-### Zsh
-
-Add to `~/.zshrc`:
-
-```bash
-eval "$(nexus completions zsh)"
-```
-
-### Fish
-
-Add to `~/.config/fish/config.fish`:
-
-```fish
-nexus completions fish | source
 ```
 
 ---

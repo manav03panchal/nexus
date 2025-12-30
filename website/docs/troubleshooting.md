@@ -641,7 +641,7 @@ If you're still stuck:
 
 4. **Open a new issue:**
    Include:
-   - Nexus version (`nexus version`)
+   - Nexus version (`nexus --version`)
    - Your `nexus.exs` (sanitized)
    - Full error message
    - Steps to reproduce

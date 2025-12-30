@@ -120,7 +120,7 @@ mv nexus ~/.local/bin/
 ### Verify Installation
 
 ```bash
-nexus version
+nexus --version
 # Output: nexus <version>
 
 nexus --help
@@ -657,21 +657,6 @@ Output:
   "tasks_failed": 0,
   "aborted_at": null
 }
-```
-
-## Shell Completions
-
-Nexus provides shell completions for bash, zsh, and fish:
-
-```bash
-# Bash - add to ~/.bashrc
-eval "$(nexus completions bash)"
-
-# Zsh - add to ~/.zshrc
-eval "$(nexus completions zsh)"
-
-# Fish - add to ~/.config/fish/config.fish
-nexus completions fish | source
 ```
 
 ## Troubleshooting

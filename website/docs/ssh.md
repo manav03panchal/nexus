@@ -23,9 +23,9 @@ Nexus uses SSH to execute commands on remote hosts. This guide covers:
 Nexus supports multiple authentication methods, tried in this order:
 
 1. **Explicit identity file** (`-i` flag or `identity` option)
-2. **SSH agent** (if `SSH_AUTH_SOCK` is set)
-3. **Default key files** (`~/.ssh/id_ed25519`, etc.)
-4. **Password** (if configured)
+2. **Password** (if provided via `--password` flag)
+3. **SSH agent** (if `SSH_AUTH_SOCK` is set)
+4. **Default key files** (`~/.ssh/id_ed25519`, etc.)
 
 ### SSH Keys (Recommended)
 
