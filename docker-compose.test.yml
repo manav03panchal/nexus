@@ -50,9 +50,10 @@ services:
     environment:
       - PUID=1000
       - PGID=1000
-      - PASSWORD_ACCESS=true
-      - USER_PASSWORD=testpass
+      - PUBLIC_KEY_FILE=/keys/id_ed25519.pub
       - USER_NAME=testuser
+    volumes:
+      - ./test/fixtures/ssh_keys:/keys:ro
     healthcheck:
       test: ["CMD-SHELL", "ss -tlnp | grep -q 2222 || exit 1"]
       interval: 2s
@@ -65,13 +66,14 @@ services:
     container_name: nexus-ssh2
     hostname: ssh2
     ports:
-      - "2222:2222"
+      - "2226:2222"
     environment:
       - PUID=1000
       - PGID=1000
-      - PASSWORD_ACCESS=true
-      - USER_PASSWORD=testpass
+      - PUBLIC_KEY_FILE=/keys/id_ed25519.pub
       - USER_NAME=testuser
+    volumes:
+      - ./test/fixtures/ssh_keys:/keys:ro
     healthcheck:
       test: ["CMD-SHELL", "ss -tlnp | grep -q 2222 || exit 1"]
       interval: 2s
@@ -88,9 +90,10 @@ services:
     environment:
       - PUID=1000
       - PGID=1000
-      - PASSWORD_ACCESS=true
-      - USER_PASSWORD=testpass
+      - PUBLIC_KEY_FILE=/keys/id_ed25519.pub
       - USER_NAME=testuser
+    volumes:
+      - ./test/fixtures/ssh_keys:/keys:ro
     healthcheck:
       test: ["CMD-SHELL", "ss -tlnp | grep -q 2222 || exit 1"]
       interval: 2s
@@ -107,9 +110,10 @@ services:
     environment:
       - PUID=1000
       - PGID=1000
-      - PASSWORD_ACCESS=true
-      - USER_PASSWORD=testpass
+      - PUBLIC_KEY_FILE=/keys/id_ed25519.pub
       - USER_NAME=testuser
+    volumes:
+      - ./test/fixtures/ssh_keys:/keys:ro
     healthcheck:
       test: ["CMD-SHELL", "ss -tlnp | grep -q 2222 || exit 1"]
       interval: 2s
@@ -126,9 +130,10 @@ services:
     environment:
       - PUID=1000
       - PGID=1000
-      - PASSWORD_ACCESS=true
-      - USER_PASSWORD=testpass
+      - PUBLIC_KEY_FILE=/keys/id_ed25519.pub
       - USER_NAME=testuser
+    volumes:
+      - ./test/fixtures/ssh_keys:/keys:ro
     healthcheck:
       test: ["CMD-SHELL", "ss -tlnp | grep -q 2222 || exit 1"]
       interval: 2s
