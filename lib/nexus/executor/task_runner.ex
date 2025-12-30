@@ -25,6 +25,7 @@ defmodule Nexus.Executor.TaskRunner do
 
   alias Nexus.Executor.Local
   alias Nexus.SSH.{Connection, Pool}
+  alias Nexus.Telemetry
   alias Nexus.Types.{Command, Host}
   alias Nexus.Types.Task, as: NexusTask
 
@@ -266,7 +267,11 @@ defmodule Nexus.Executor.TaskRunner do
 
       {:ok, output, exit_code} ->
         if attempt <= cmd.retries do
-          Process.sleep(calculate_retry_delay(cmd.retry_delay, attempt))
+          delay = calculate_retry_delay(cmd.retry_delay, attempt)
+          cmd_preview = String.slice(cmd.cmd, 0, 40)
+          IO.puts("    ↻ Retry #{attempt}/#{cmd.retries}: #{cmd_preview} (waiting #{delay}ms)")
+          Telemetry.emit_command_retry(cmd.cmd, attempt, cmd.retries, delay, exit_code)
+          Process.sleep(delay)
           execute_with_retry(cmd, executor, attempt + 1)
         else
           %{
@@ -281,7 +286,11 @@ defmodule Nexus.Executor.TaskRunner do
 
       {:error, reason} ->
         if attempt <= cmd.retries do
-          Process.sleep(calculate_retry_delay(cmd.retry_delay, attempt))
+          delay = calculate_retry_delay(cmd.retry_delay, attempt)
+          cmd_preview = String.slice(cmd.cmd, 0, 40)
+          IO.puts("    ↻ Retry #{attempt}/#{cmd.retries}: #{cmd_preview} (waiting #{delay}ms)")
+          Telemetry.emit_command_retry(cmd.cmd, attempt, cmd.retries, delay, -1)
+          Process.sleep(delay)
           execute_with_retry(cmd, executor, attempt + 1)
         else
           %{

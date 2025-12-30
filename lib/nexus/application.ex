@@ -9,12 +9,12 @@ defmodule Nexus.Application do
 
   @impl true
   def start(_type, _args) do
+    # Attach telemetry handlers before starting supervision tree
+    Nexus.Telemetry.setup()
+
     children = [
       # Dynamic supervisor for task execution processes
       {Nexus.Executor.Supervisor, []}
-
-      # Telemetry will be added in Phase 8
-      # {Nexus.Telemetry, []}
     ]
 
     opts = [strategy: :one_for_one, name: Nexus.Supervisor]

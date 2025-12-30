@@ -49,6 +49,10 @@ defmodule Nexus.Telemetry do
       - Measurements: `%{duration: integer()}`
       - Metadata: `%{command: String.t(), exit_code: integer()}`
 
+    * `[:nexus, :command, :retry]` - Command retry attempt
+      - Measurements: `%{attempt: integer(), delay_ms: integer()}`
+      - Metadata: `%{command: String.t(), max_attempts: integer(), exit_code: integer()}`
+
   ### SSH Events
 
     * `[:nexus, :ssh, :connect, :start]` - SSH connection started
@@ -92,6 +96,7 @@ defmodule Nexus.Telemetry do
       [:nexus, :task, :exception],
       [:nexus, :command, :start],
       [:nexus, :command, :stop],
+      [:nexus, :command, :retry],
       [:nexus, :ssh, :connect, :start],
       [:nexus, :ssh, :connect, :stop]
     ]
@@ -211,6 +216,18 @@ defmodule Nexus.Telemetry do
   end
 
   @doc """
+  Emits a command retry event.
+  """
+  @spec emit_command_retry(String.t(), integer(), integer(), integer(), integer()) :: :ok
+  def emit_command_retry(command, attempt, max_attempts, delay_ms, exit_code) do
+    :telemetry.execute(
+      [:nexus, :command, :retry],
+      %{attempt: attempt, delay_ms: delay_ms},
+      %{command: command, max_attempts: max_attempts, exit_code: exit_code}
+    )
+  end
+
+  @doc """
   Emits an SSH connect start event.
   """
   @spec emit_ssh_connect_start(String.t(), integer()) :: :ok
@@ -296,6 +313,14 @@ defmodule Nexus.Telemetry do
   def handle_event([:nexus, :command, :stop], measurements, metadata, _config) do
     duration_ms = System.convert_time_unit(measurements.duration, :native, :millisecond)
     Logger.debug("Command completed: exit_code=#{metadata.exit_code} duration=#{duration_ms}ms")
+  end
+
+  def handle_event([:nexus, :command, :retry], measurements, metadata, _config) do
+    cmd_preview = String.slice(metadata.command, 0, 40)
+
+    Logger.debug(
+      "Retry #{measurements.attempt}/#{metadata.max_attempts}: #{cmd_preview} (exit_code=#{metadata.exit_code}, waiting #{measurements.delay_ms}ms)"
+    )
   end
 
   def handle_event([:nexus, :ssh, :connect, :start], _measurements, metadata, _config) do
