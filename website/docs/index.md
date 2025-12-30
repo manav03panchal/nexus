@@ -6,6 +6,8 @@ title: Introduction
 
 # Nexus
 
+> **Last updated:** December 29, 2025
+
 **Nexus** is a distributed task runner built in Elixir for deploying applications and running automation tasks across local and remote hosts.
 
 ## Why Nexus?
