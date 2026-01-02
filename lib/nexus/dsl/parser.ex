@@ -126,13 +126,25 @@ defmodule Nexus.DSL.Parser.DSL do
   @moduledoc false
   # Internal module that provides the DSL macros and functions
 
-  alias Nexus.Types.{Command, Config, Download, Host, HostGroup, Task, Template, Upload, WaitFor}
+  alias Nexus.Types.{
+    Command,
+    Config,
+    Download,
+    Handler,
+    Host,
+    HostGroup,
+    Task,
+    Template,
+    Upload,
+    WaitFor
+  }
 
   @doc false
   def run_dsl(fun) do
     # Initialize process dictionary for state
     Process.put(:nexus_config, Config.new())
     Process.put(:nexus_current_task, nil)
+    Process.put(:nexus_current_handler, nil)
 
     # Execute the DSL
     fun.()
@@ -297,6 +309,52 @@ defmodule Nexus.DSL.Parser.DSL do
   end
 
   @doc """
+  Defines a handler that can be triggered by notify options.
+
+  Handlers are named blocks of commands that execute when triggered
+  by upload, download, or template commands with `:notify`.
+
+  ## Examples
+
+      handler :restart_nginx do
+        run "systemctl restart nginx", sudo: true
+      end
+
+      handler :reload_app do
+        run "systemctl reload app"
+        run "sleep 2"
+      end
+
+  """
+  defmacro handler(name, do: block) do
+    quote do
+      unquote(__MODULE__).do_handler(unquote(name), fn ->
+        unquote(block)
+      end)
+    end
+  end
+
+  def do_handler(name, block_fn) when is_atom(name) do
+    config = Process.get(:nexus_config)
+
+    handler = Handler.new(name)
+
+    # Set current handler for run commands
+    Process.put(:nexus_current_handler, handler)
+
+    # Execute the block to collect commands
+    block_fn.()
+
+    # Get the updated handler with commands
+    handler = Process.get(:nexus_current_handler)
+    Process.put(:nexus_current_handler, nil)
+
+    # Add handler to config
+    Process.put(:nexus_config, Config.add_handler(config, handler))
+    :ok
+  end
+
+  @doc """
   Adds a command to the current task.
 
   ## Examples
@@ -314,15 +372,24 @@ defmodule Nexus.DSL.Parser.DSL do
 
   def do_run(cmd, opts) when is_binary(cmd) and is_list(opts) do
     task = Process.get(:nexus_current_task)
-
-    if is_nil(task) do
-      raise ArgumentError, "run must be called inside a task block"
-    end
+    handler = Process.get(:nexus_current_handler)
 
     command = Command.new(cmd, opts)
-    updated_task = Task.add_command(task, command)
-    Process.put(:nexus_current_task, updated_task)
-    :ok
+
+    cond do
+      not is_nil(task) ->
+        updated_task = Task.add_command(task, command)
+        Process.put(:nexus_current_task, updated_task)
+        :ok
+
+      not is_nil(handler) ->
+        updated_handler = Handler.add_command(handler, command)
+        Process.put(:nexus_current_handler, updated_handler)
+        :ok
+
+      true ->
+        raise ArgumentError, "run must be called inside a task or handler block"
+    end
   end
 
   @doc """

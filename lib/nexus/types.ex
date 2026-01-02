@@ -202,6 +202,8 @@ defmodule Nexus.Types do
     Represents the full Nexus configuration parsed from nexus.exs.
     """
 
+    alias Nexus.Types.Handler
+
     @type t :: %__MODULE__{
             default_user: String.t() | nil,
             default_port: pos_integer(),
@@ -211,7 +213,8 @@ defmodule Nexus.Types do
             continue_on_error: boolean(),
             hosts: %{atom() => Host.t()},
             groups: %{atom() => HostGroup.t()},
-            tasks: %{atom() => Task.t()}
+            tasks: %{atom() => Task.t()},
+            handlers: %{atom() => Handler.t()}
           }
 
     defstruct default_user: nil,
@@ -222,7 +225,8 @@ defmodule Nexus.Types do
               continue_on_error: false,
               hosts: %{},
               groups: %{},
-              tasks: %{}
+              tasks: %{},
+              handlers: %{}
 
     @doc """
     Creates a new empty Config with default values.
@@ -261,6 +265,14 @@ defmodule Nexus.Types do
     @spec add_task(t(), Task.t()) :: t()
     def add_task(%__MODULE__{} = config, %Task{} = task) do
       %{config | tasks: Map.put(config.tasks, task.name, task)}
+    end
+
+    @doc """
+    Adds a handler to the configuration.
+    """
+    @spec add_handler(t(), Handler.t()) :: t()
+    def add_handler(%__MODULE__{} = config, %Handler{} = handler) do
+      %{config | handlers: Map.put(config.handlers, handler.name, handler)}
     end
 
     @doc """
