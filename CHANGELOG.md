@@ -5,6 +5,58 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-01-01
+
+### Added
+
+- **Secrets Management**
+  - AES-256-GCM encrypted secret storage in `~/.nexus/secrets.enc`
+  - PBKDF2 key derivation with 100k iterations
+  - Master key sources: environment variable, key file, or interactive prompt
+  - CLI commands: `nexus secret set`, `get`, `list`, `delete`, `init`
+  - DSL function: `secret("name")` for secure credential access in tasks
+
+- **File Transfer (SFTP)**
+  - Built-in SFTP support using Erlang's `:ssh_sftp` module
+  - `upload` macro for local-to-remote file transfers
+  - `download` macro for remote-to-local file transfers
+  - Options: `sudo`, `mode` (permissions), `notify` (trigger handlers)
+
+- **EEx Templates**
+  - Template rendering with variable substitution
+  - `template` macro for rendering and uploading configuration files
+  - Variables available as `@var_name` in templates
+  - Options: `vars`, `sudo`, `mode`, `notify`
+
+- **Deployment Strategies**
+  - Rolling deployment with `strategy: :rolling` and `batch_size` options
+  - Health checks with `wait_for` macro
+  - HTTP health checks (status code, body pattern matching)
+  - TCP port connectivity checks
+  - Command-based health checks (exit code 0)
+  - Configurable timeout and retry intervals
+
+- **Handlers**
+  - Notification-based command execution with `handler` macro
+  - Trigger handlers via `notify:` option on upload, download, template
+  - Ideal for service restarts after configuration changes
+
+- **Tailscale Host Discovery**
+  - Auto-discover hosts from Tailscale network
+  - `tailscale_hosts` macro with tag filtering
+  - Options: `tag`, `as` (group name), `user`, `online_only`
+  - Queries local Tailscale daemon via `tailscale status --json`
+
+### Dependencies
+
+- Added `{:req, "~> 0.5"}` for HTTP health checks
+
+### Technical Details
+
+- 490 unit tests (up from 394)
+- 31 property-based tests (up from 21)
+- All existing v0.1 configurations remain compatible
+
 ## [0.1.0] - 2024-12-28
 
 ### Added

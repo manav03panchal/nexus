@@ -23,10 +23,12 @@ defmodule Nexus.Executor.TaskRunner do
 
   """
 
-  alias Nexus.Executor.Local
-  alias Nexus.SSH.{Connection, Pool}
+  alias Nexus.Executor.{HealthCheck, Local}
+  alias Nexus.Executor.Strategies.Rolling
+  alias Nexus.SSH.{Connection, Pool, SFTP}
   alias Nexus.Telemetry
-  alias Nexus.Types.{Command, Host}
+  alias Nexus.Template.Renderer
+  alias Nexus.Types.{Command, Download, Host, Template, Upload, WaitFor}
   alias Nexus.Types.Task, as: NexusTask
 
   @type task_result :: %{
@@ -123,8 +125,17 @@ defmodule Nexus.Executor.TaskRunner do
       case task.strategy do
         :parallel -> run_parallel(task, hosts, opts)
         :serial -> run_serial(task, hosts, opts)
+        :rolling -> run_rolling(task, hosts, opts)
       end
     end
+  end
+
+  defp run_rolling(%NexusTask{} = task, hosts, opts) do
+    rolling_opts =
+      opts
+      |> Keyword.put(:batch_size, task.batch_size)
+
+    Rolling.run(task, hosts, rolling_opts)
   end
 
   defp run_parallel(%NexusTask{} = task, hosts, opts) do
@@ -245,8 +256,8 @@ defmodule Nexus.Executor.TaskRunner do
     {:ok, Enum.reverse(results)}
   end
 
-  defp execute_with_retry(%Command{} = cmd, executor) do
-    execute_with_retry(cmd, executor, 1)
+  defp execute_with_retry(command, executor) do
+    execute_with_retry(command, executor, 1)
   end
 
   defp execute_with_retry(%Command{} = cmd, executor, attempt) do
@@ -305,6 +316,133 @@ defmodule Nexus.Executor.TaskRunner do
     end
   end
 
+  defp execute_with_retry(%Upload{} = upload, executor, attempt) do
+    start_time = System.monotonic_time(:millisecond)
+    result = executor.(upload)
+    duration = System.monotonic_time(:millisecond) - start_time
+    cmd_desc = "upload #{upload.local_path} -> #{upload.remote_path}"
+
+    case result do
+      {:ok, output, 0} ->
+        %{
+          cmd: cmd_desc,
+          status: :ok,
+          output: output,
+          exit_code: 0,
+          attempts: attempt,
+          duration_ms: duration
+        }
+
+      {:error, reason} ->
+        %{
+          cmd: cmd_desc,
+          status: :error,
+          output: inspect(reason),
+          exit_code: -1,
+          attempts: attempt,
+          duration_ms: duration
+        }
+    end
+  end
+
+  defp execute_with_retry(%Download{} = download, executor, attempt) do
+    start_time = System.monotonic_time(:millisecond)
+    result = executor.(download)
+    duration = System.monotonic_time(:millisecond) - start_time
+    cmd_desc = "download #{download.remote_path} -> #{download.local_path}"
+
+    case result do
+      {:ok, output, 0} ->
+        %{
+          cmd: cmd_desc,
+          status: :ok,
+          output: output,
+          exit_code: 0,
+          attempts: attempt,
+          duration_ms: duration
+        }
+
+      {:error, reason} ->
+        %{
+          cmd: cmd_desc,
+          status: :error,
+          output: inspect(reason),
+          exit_code: -1,
+          attempts: attempt,
+          duration_ms: duration
+        }
+    end
+  end
+
+  defp execute_with_retry(%Template{} = template, executor, attempt) do
+    start_time = System.monotonic_time(:millisecond)
+    result = executor.(template)
+    duration = System.monotonic_time(:millisecond) - start_time
+    cmd_desc = "template #{template.source} -> #{template.destination}"
+
+    case result do
+      {:ok, output, 0} ->
+        %{
+          cmd: cmd_desc,
+          status: :ok,
+          output: output,
+          exit_code: 0,
+          attempts: attempt,
+          duration_ms: duration
+        }
+
+      {:error, reason} ->
+        %{
+          cmd: cmd_desc,
+          status: :error,
+          output: inspect(reason),
+          exit_code: -1,
+          attempts: attempt,
+          duration_ms: duration
+        }
+    end
+  end
+
+  defp execute_with_retry(%WaitFor{} = wait_for, executor, attempt) do
+    start_time = System.monotonic_time(:millisecond)
+    result = executor.(wait_for)
+    duration = System.monotonic_time(:millisecond) - start_time
+    cmd_desc = "wait_for #{wait_for.type} #{wait_for.target}"
+
+    case result do
+      {:ok, output, 0} ->
+        %{
+          cmd: cmd_desc,
+          status: :ok,
+          output: output,
+          exit_code: 0,
+          attempts: attempt,
+          duration_ms: duration
+        }
+
+      {:error, reason} ->
+        %{
+          cmd: cmd_desc,
+          status: :error,
+          output: inspect(reason),
+          exit_code: -1,
+          attempts: attempt,
+          duration_ms: duration
+        }
+    end
+  end
+
+  @doc """
+  Executes a single command and returns a result map.
+
+  Used by rolling deployment strategy to execute individual commands.
+  """
+  @spec execute_command(term(), term()) :: command_result()
+  def execute_command(command, conn) do
+    executor = fn cmd -> execute_remote_command(cmd, conn) end
+    execute_with_retry(command, executor, 1)
+  end
+
   defp execute_local_command(%Command{} = cmd) do
     if cmd.sudo do
       Local.run_sudo(cmd)
@@ -313,11 +451,88 @@ defmodule Nexus.Executor.TaskRunner do
     end
   end
 
+  defp execute_local_command(%Upload{} = _upload) do
+    # Local upload doesn't make sense - it's a copy
+    {:error, :upload_not_supported_locally}
+  end
+
+  defp execute_local_command(%Download{} = _download) do
+    # Local download doesn't make sense - it's a copy
+    {:error, :download_not_supported_locally}
+  end
+
+  defp execute_local_command(%Template{} = _template) do
+    # Local template doesn't make sense - templates are for remote hosts
+    {:error, :template_not_supported_locally}
+  end
+
+  defp execute_local_command(%WaitFor{} = wait_for) do
+    case HealthCheck.wait(wait_for, []) do
+      :ok -> {:ok, "health check passed", 0}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   defp execute_remote_command(%Command{} = cmd, conn) do
     if cmd.sudo do
       Connection.exec_sudo(conn, cmd.cmd, timeout: cmd.timeout, sudo_user: cmd.user)
     else
       Connection.exec(conn, cmd.cmd, timeout: cmd.timeout)
+    end
+  end
+
+  defp execute_remote_command(%Upload{} = upload, conn) do
+    opts = [sudo: upload.sudo, mode: upload.mode]
+
+    case SFTP.upload(conn, upload.local_path, upload.remote_path, opts) do
+      :ok -> {:ok, "uploaded #{upload.local_path} -> #{upload.remote_path}", 0}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp execute_remote_command(%Download{} = download, conn) do
+    opts = [sudo: download.sudo]
+
+    case SFTP.download(conn, download.remote_path, download.local_path, opts) do
+      :ok -> {:ok, "downloaded #{download.remote_path} -> #{download.local_path}", 0}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp execute_remote_command(%Template{} = template, conn) do
+    # First, render the template locally
+    case Renderer.render_file(template.source, template.vars) do
+      {:ok, content} ->
+        # Write to a temp file, then upload
+        upload_rendered_template(conn, content, template)
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp execute_remote_command(%WaitFor{} = wait_for, conn) do
+    case HealthCheck.wait(wait_for, conn: conn) do
+      :ok -> {:ok, "health check passed", 0}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp upload_rendered_template(conn, content, template) do
+    # Create a temp file with the rendered content
+    temp_path =
+      System.tmp_dir!() |> Path.join("nexus_template_#{:erlang.unique_integer([:positive])}")
+
+    try do
+      File.write!(temp_path, content)
+      opts = [sudo: template.sudo, mode: template.mode]
+
+      case SFTP.upload(conn, temp_path, template.destination, opts) do
+        :ok -> {:ok, "template #{template.source} -> #{template.destination}", 0}
+        {:error, reason} -> {:error, reason}
+      end
+    after
+      File.rm(temp_path)
     end
   end
 

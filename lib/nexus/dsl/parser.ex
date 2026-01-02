@@ -24,7 +24,7 @@ defmodule Nexus.DSL.Parser do
 
   """
 
-  alias Nexus.Types.{Command, Config, Host, HostGroup, Task}
+  alias Nexus.Types.{Command, Config, Download, Host, HostGroup, Task, Template, Upload, WaitFor}
 
   @type parse_error :: {:error, String.t()}
   @type parse_result :: {:ok, Config.t()} | parse_error()
@@ -126,13 +126,25 @@ defmodule Nexus.DSL.Parser.DSL do
   @moduledoc false
   # Internal module that provides the DSL macros and functions
 
-  alias Nexus.Types.{Command, Config, Host, HostGroup, Task}
+  alias Nexus.Types.{
+    Command,
+    Config,
+    Download,
+    Handler,
+    Host,
+    HostGroup,
+    Task,
+    Template,
+    Upload,
+    WaitFor
+  }
 
   @doc false
   def run_dsl(fun) do
     # Initialize process dictionary for state
     Process.put(:nexus_config, Config.new())
     Process.put(:nexus_current_task, nil)
+    Process.put(:nexus_current_handler, nil)
 
     # Execute the DSL
     fun.()
@@ -277,6 +289,7 @@ defmodule Nexus.DSL.Parser.DSL do
       on: Keyword.get(opts, :on, :local),
       timeout: Keyword.get(opts, :timeout, 300_000),
       strategy: Keyword.get(opts, :strategy, :parallel),
+      batch_size: Keyword.get(opts, :batch_size, 1),
       commands: []
     }
 
@@ -292,6 +305,52 @@ defmodule Nexus.DSL.Parser.DSL do
 
     # Add task to config
     Process.put(:nexus_config, Config.add_task(config, task))
+    :ok
+  end
+
+  @doc """
+  Defines a handler that can be triggered by notify options.
+
+  Handlers are named blocks of commands that execute when triggered
+  by upload, download, or template commands with `:notify`.
+
+  ## Examples
+
+      handler :restart_nginx do
+        run "systemctl restart nginx", sudo: true
+      end
+
+      handler :reload_app do
+        run "systemctl reload app"
+        run "sleep 2"
+      end
+
+  """
+  defmacro handler(name, do: block) do
+    quote do
+      unquote(__MODULE__).do_handler(unquote(name), fn ->
+        unquote(block)
+      end)
+    end
+  end
+
+  def do_handler(name, block_fn) when is_atom(name) do
+    config = Process.get(:nexus_config)
+
+    handler = Handler.new(name)
+
+    # Set current handler for run commands
+    Process.put(:nexus_current_handler, handler)
+
+    # Execute the block to collect commands
+    block_fn.()
+
+    # Get the updated handler with commands
+    handler = Process.get(:nexus_current_handler)
+    Process.put(:nexus_current_handler, nil)
+
+    # Add handler to config
+    Process.put(:nexus_config, Config.add_handler(config, handler))
     :ok
   end
 
@@ -313,15 +372,196 @@ defmodule Nexus.DSL.Parser.DSL do
 
   def do_run(cmd, opts) when is_binary(cmd) and is_list(opts) do
     task = Process.get(:nexus_current_task)
-
-    if is_nil(task) do
-      raise ArgumentError, "run must be called inside a task block"
-    end
+    handler = Process.get(:nexus_current_handler)
 
     command = Command.new(cmd, opts)
-    updated_task = Task.add_command(task, command)
+
+    cond do
+      not is_nil(task) ->
+        updated_task = Task.add_command(task, command)
+        Process.put(:nexus_current_task, updated_task)
+        :ok
+
+      not is_nil(handler) ->
+        updated_handler = Handler.add_command(handler, command)
+        Process.put(:nexus_current_handler, updated_handler)
+        :ok
+
+      true ->
+        raise ArgumentError, "run must be called inside a task or handler block"
+    end
+  end
+
+  @doc """
+  Uploads a local file to remote hosts.
+
+  ## Options
+
+    * `:sudo` - Upload to a location requiring root access
+    * `:mode` - File permissions to set (e.g., 0o644)
+    * `:notify` - Handler to trigger after upload
+
+  ## Examples
+
+      task :deploy, on: :web do
+        upload "dist/app.tar.gz", "/opt/app/release.tar.gz"
+        upload "config.txt", "/etc/app/config.txt", sudo: true, mode: 0o644
+      end
+
+  """
+  defmacro upload(local_path, remote_path, opts \\ []) do
+    quote do
+      unquote(__MODULE__).do_upload(unquote(local_path), unquote(remote_path), unquote(opts))
+    end
+  end
+
+  def do_upload(local_path, remote_path, opts)
+      when is_binary(local_path) and is_binary(remote_path) and is_list(opts) do
+    task = Process.get(:nexus_current_task)
+
+    if is_nil(task) do
+      raise ArgumentError, "upload must be called inside a task block"
+    end
+
+    upload_cmd = Upload.new(local_path, remote_path, opts)
+    updated_task = add_command_to_task(task, upload_cmd)
     Process.put(:nexus_current_task, updated_task)
     :ok
+  end
+
+  @doc """
+  Downloads a file from remote hosts to a local path.
+
+  ## Options
+
+    * `:sudo` - Download from a location requiring root access
+
+  ## Examples
+
+      task :collect_logs, on: :web do
+        download "/var/log/app.log", "logs/app.log"
+      end
+
+  """
+  defmacro download(remote_path, local_path, opts \\ []) do
+    quote do
+      unquote(__MODULE__).do_download(unquote(remote_path), unquote(local_path), unquote(opts))
+    end
+  end
+
+  def do_download(remote_path, local_path, opts)
+      when is_binary(remote_path) and is_binary(local_path) and is_list(opts) do
+    task = Process.get(:nexus_current_task)
+
+    if is_nil(task) do
+      raise ArgumentError, "download must be called inside a task block"
+    end
+
+    download_cmd = Download.new(remote_path, local_path, opts)
+    updated_task = add_command_to_task(task, download_cmd)
+    Process.put(:nexus_current_task, updated_task)
+    :ok
+  end
+
+  @doc """
+  Renders an EEx template and uploads it to remote hosts.
+
+  Templates are rendered locally with variable substitution, then uploaded.
+  Variables are available in templates as `@var_name`.
+
+  ## Options
+
+    * `:vars` - Map of variables to bind in the template
+    * `:sudo` - Upload to a location requiring root access
+    * `:mode` - File permissions to set (e.g., 0o644)
+    * `:notify` - Handler to trigger after template upload
+
+  ## Examples
+
+      task :configure, on: :web do
+        template "templates/nginx.conf.eex", "/etc/nginx/nginx.conf",
+          vars: %{port: 8080, workers: 4},
+          sudo: true,
+          mode: 0o644
+      end
+
+  """
+  defmacro template(source, destination, opts \\ []) do
+    quote do
+      unquote(__MODULE__).do_template(unquote(source), unquote(destination), unquote(opts))
+    end
+  end
+
+  def do_template(source, destination, opts)
+      when is_binary(source) and is_binary(destination) and is_list(opts) do
+    task = Process.get(:nexus_current_task)
+
+    if is_nil(task) do
+      raise ArgumentError, "template must be called inside a task block"
+    end
+
+    template_cmd = Template.new(source, destination, opts)
+    updated_task = add_command_to_task(task, template_cmd)
+    Process.put(:nexus_current_task, updated_task)
+    :ok
+  end
+
+  @doc """
+  Waits for a health check to pass before continuing.
+
+  Used in rolling deployments to verify services are healthy
+  before proceeding to the next batch of hosts.
+
+  ## Types
+
+    * `:http` - HTTP GET request, checks for 2xx status
+    * `:tcp` - TCP connection check
+    * `:command` - Shell command, checks for exit code 0
+
+  ## Options
+
+    * `:timeout` - Total time to wait in milliseconds (default: 60_000)
+    * `:interval` - Time between checks in milliseconds (default: 5_000)
+    * `:expected_status` - Expected HTTP status code (for :http)
+    * `:expected_body` - Expected body pattern (for :http)
+
+  ## Examples
+
+      task :deploy, on: :web, strategy: :rolling do
+        run "systemctl restart app", sudo: true
+        wait_for :http, "http://localhost:4000/health",
+          timeout: 60_000,
+          interval: 5_000
+      end
+
+      task :db_check, on: :db do
+        wait_for :tcp, "localhost:5432", timeout: 30_000
+      end
+
+  """
+  defmacro wait_for(type, target, opts \\ []) do
+    quote do
+      unquote(__MODULE__).do_wait_for(unquote(type), unquote(target), unquote(opts))
+    end
+  end
+
+  def do_wait_for(type, target, opts)
+      when type in [:http, :tcp, :command] and is_binary(target) and is_list(opts) do
+    task = Process.get(:nexus_current_task)
+
+    if is_nil(task) do
+      raise ArgumentError, "wait_for must be called inside a task block"
+    end
+
+    wait_for_cmd = WaitFor.new(type, target, opts)
+    updated_task = add_command_to_task(task, wait_for_cmd)
+    Process.put(:nexus_current_task, updated_task)
+    :ok
+  end
+
+  # Helper to add any command type to a task
+  defp add_command_to_task(%Task{} = task, command) do
+    %{task | commands: task.commands ++ [command]}
   end
 
   @doc """
@@ -345,5 +585,103 @@ defmodule Nexus.DSL.Parser.DSL do
 
   def do_env(var) when is_atom(var) do
     System.get_env(to_string(var)) || ""
+  end
+
+  @doc """
+  Retrieves a secret value from the encrypted vault.
+
+  Secrets must be set using `nexus secret set <name> <value>` before use.
+
+  ## Examples
+
+      task :deploy do
+        run "docker login -p \#{secret("DOCKER_PASSWORD")}"
+      end
+
+      task :db_migrate do
+        run "DATABASE_URL=\#{secret("DATABASE_URL")} mix ecto.migrate"
+      end
+
+  """
+  defmacro secret(name) do
+    quote do
+      unquote(__MODULE__).do_secret(unquote(name))
+    end
+  end
+
+  def do_secret(name) when is_binary(name) do
+    alias Nexus.Secrets.Vault
+
+    case Vault.get(name) do
+      {:ok, value} ->
+        value
+
+      {:error, :not_found} ->
+        raise ArgumentError,
+              "secret '#{name}' not found. Use 'nexus secret set #{name}' to add it."
+
+      {:error, :no_key_available} ->
+        raise ArgumentError,
+              "no master key available. Run 'nexus secret init' first."
+
+      {:error, reason} ->
+        raise ArgumentError, "failed to retrieve secret '#{name}': #{inspect(reason)}"
+    end
+  end
+
+  def do_secret(name) when is_atom(name) do
+    do_secret(to_string(name))
+  end
+
+  @doc """
+  Discovers hosts from Tailscale network and adds them as a group.
+
+  This macro queries the local Tailscale daemon for connected peers
+  and filters them by ACL tags.
+
+  ## Options
+
+    * `:tag` - (required) The Tailscale ACL tag to filter by (without "tag:" prefix)
+    * `:as` - (required) The group name to assign discovered hosts to
+    * `:user` - (optional) SSH user for all discovered hosts
+    * `:online_only` - (optional) Only include online peers (default: true)
+
+  ## Requirements
+
+    * Tailscale must be installed and running
+    * The `tailscale` CLI must be in PATH
+    * Hosts must have ACL tags configured in Tailscale admin console
+
+  ## Examples
+
+      # Discover all hosts with tag:webserver and add them to :web group
+      tailscale_hosts tag: "webserver", as: :web
+
+      # Discover hosts with tag:database, specify SSH user
+      tailscale_hosts tag: "database", as: :db, user: "admin"
+
+      # Include offline hosts too
+      tailscale_hosts tag: "all", as: :fleet, online_only: false
+
+  """
+  defmacro tailscale_hosts(opts) do
+    quote do
+      unquote(__MODULE__).do_tailscale_hosts(unquote(opts))
+    end
+  end
+
+  def do_tailscale_hosts(opts) when is_list(opts) do
+    alias Nexus.Discovery.Tailscale
+
+    config = Process.get(:nexus_config)
+
+    case Tailscale.discover(config, opts) do
+      {:ok, updated_config} ->
+        Process.put(:nexus_config, updated_config)
+        :ok
+
+      {:error, reason} ->
+        raise ArgumentError, "tailscale_hosts failed: #{reason}"
+    end
   end
 end

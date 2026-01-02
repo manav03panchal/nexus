@@ -27,7 +27,7 @@ defmodule Nexus.SSH.Connection do
   alias Nexus.Types.Host
   alias SSHKit.SSH
 
-  @type conn :: SSH.Connection.t()
+  @type conn :: %SSHKit.SSH.Connection{}
   @type output :: String.t()
   @type exit_code :: non_neg_integer()
   @type connect_opts :: [connect_opt()]
@@ -299,6 +299,15 @@ defmodule Nexus.SSH.Connection do
   rescue
     _ -> false
   end
+
+  @doc """
+  Returns the underlying Erlang SSH connection reference.
+
+  This is used internally for SFTP operations that require
+  direct access to the SSH connection.
+  """
+  @spec get_ssh_connection(conn()) :: term()
+  def get_ssh_connection(%SSHKit.SSH.Connection{ref: ref}), do: ref
 
   # Private functions
 

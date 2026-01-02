@@ -193,13 +193,13 @@ defmodule Nexus.DSL.ParserTest do
       assert message =~ "unknown config option"
     end
 
-    test "returns error for run outside task block" do
+    test "returns error for run outside task or handler block" do
       dsl = """
       run "echo hello"
       """
 
       assert {:error, message} = Parser.parse_string(dsl)
-      assert message =~ "run must be called inside a task block"
+      assert message =~ "run must be called inside a task or handler block"
     end
   end
 
@@ -229,6 +229,57 @@ defmodule Nexus.DSL.ParserTest do
     test "returns error for missing file" do
       assert {:error, message} = Parser.parse_file("/nonexistent/path/nexus.exs")
       assert message =~ "failed to read file"
+    end
+  end
+
+  describe "handler parsing" do
+    test "parses simple handler" do
+      dsl = """
+      handler :restart_nginx do
+        run "systemctl restart nginx", sudo: true
+      end
+      """
+
+      assert {:ok, config} = Parser.parse_string(dsl)
+      assert Map.has_key?(config.handlers, :restart_nginx)
+
+      handler = config.handlers[:restart_nginx]
+      assert handler.name == :restart_nginx
+      assert length(handler.commands) == 1
+      assert Enum.at(handler.commands, 0).cmd == "systemctl restart nginx"
+      assert Enum.at(handler.commands, 0).sudo == true
+    end
+
+    test "parses multiple handlers" do
+      dsl = """
+      handler :restart_nginx do
+        run "systemctl restart nginx", sudo: true
+      end
+
+      handler :reload_app do
+        run "systemctl reload app", sudo: true
+      end
+      """
+
+      assert {:ok, config} = Parser.parse_string(dsl)
+      assert map_size(config.handlers) == 2
+      assert Map.has_key?(config.handlers, :restart_nginx)
+      assert Map.has_key?(config.handlers, :reload_app)
+    end
+
+    test "parses handler with multiple commands" do
+      dsl = """
+      handler :full_restart do
+        run "systemctl stop app", sudo: true
+        run "systemctl stop nginx", sudo: true
+        run "systemctl start nginx", sudo: true
+        run "systemctl start app", sudo: true
+      end
+      """
+
+      assert {:ok, config} = Parser.parse_string(dsl)
+      handler = config.handlers[:full_restart]
+      assert length(handler.commands) == 4
     end
   end
 
