@@ -632,4 +632,56 @@ defmodule Nexus.DSL.Parser.DSL do
   def do_secret(name) when is_atom(name) do
     do_secret(to_string(name))
   end
+
+  @doc """
+  Discovers hosts from Tailscale network and adds them as a group.
+
+  This macro queries the local Tailscale daemon for connected peers
+  and filters them by ACL tags.
+
+  ## Options
+
+    * `:tag` - (required) The Tailscale ACL tag to filter by (without "tag:" prefix)
+    * `:as` - (required) The group name to assign discovered hosts to
+    * `:user` - (optional) SSH user for all discovered hosts
+    * `:online_only` - (optional) Only include online peers (default: true)
+
+  ## Requirements
+
+    * Tailscale must be installed and running
+    * The `tailscale` CLI must be in PATH
+    * Hosts must have ACL tags configured in Tailscale admin console
+
+  ## Examples
+
+      # Discover all hosts with tag:webserver and add them to :web group
+      tailscale_hosts tag: "webserver", as: :web
+
+      # Discover hosts with tag:database, specify SSH user
+      tailscale_hosts tag: "database", as: :db, user: "admin"
+
+      # Include offline hosts too
+      tailscale_hosts tag: "all", as: :fleet, online_only: false
+
+  """
+  defmacro tailscale_hosts(opts) do
+    quote do
+      unquote(__MODULE__).do_tailscale_hosts(unquote(opts))
+    end
+  end
+
+  def do_tailscale_hosts(opts) when is_list(opts) do
+    alias Nexus.Discovery.Tailscale
+
+    config = Process.get(:nexus_config)
+
+    case Tailscale.discover(config, opts) do
+      {:ok, updated_config} ->
+        Process.put(:nexus_config, updated_config)
+        :ok
+
+      {:error, reason} ->
+        raise ArgumentError, "tailscale_hosts failed: #{reason}"
+    end
+  end
 end
