@@ -24,9 +24,9 @@ defmodule Nexus.Executor.TaskRunner do
   """
 
   alias Nexus.Executor.Local
-  alias Nexus.SSH.{Connection, Pool}
+  alias Nexus.SSH.{Connection, Pool, SFTP}
   alias Nexus.Telemetry
-  alias Nexus.Types.{Command, Host}
+  alias Nexus.Types.{Command, Download, Host, Upload}
   alias Nexus.Types.Task, as: NexusTask
 
   @type task_result :: %{
@@ -245,8 +245,8 @@ defmodule Nexus.Executor.TaskRunner do
     {:ok, Enum.reverse(results)}
   end
 
-  defp execute_with_retry(%Command{} = cmd, executor) do
-    execute_with_retry(cmd, executor, 1)
+  defp execute_with_retry(command, executor) do
+    execute_with_retry(command, executor, 1)
   end
 
   defp execute_with_retry(%Command{} = cmd, executor, attempt) do
@@ -305,6 +305,64 @@ defmodule Nexus.Executor.TaskRunner do
     end
   end
 
+  defp execute_with_retry(%Upload{} = upload, executor, attempt) do
+    start_time = System.monotonic_time(:millisecond)
+    result = executor.(upload)
+    duration = System.monotonic_time(:millisecond) - start_time
+    cmd_desc = "upload #{upload.local_path} -> #{upload.remote_path}"
+
+    case result do
+      {:ok, output, 0} ->
+        %{
+          cmd: cmd_desc,
+          status: :ok,
+          output: output,
+          exit_code: 0,
+          attempts: attempt,
+          duration_ms: duration
+        }
+
+      {:error, reason} ->
+        %{
+          cmd: cmd_desc,
+          status: :error,
+          output: inspect(reason),
+          exit_code: -1,
+          attempts: attempt,
+          duration_ms: duration
+        }
+    end
+  end
+
+  defp execute_with_retry(%Download{} = download, executor, attempt) do
+    start_time = System.monotonic_time(:millisecond)
+    result = executor.(download)
+    duration = System.monotonic_time(:millisecond) - start_time
+    cmd_desc = "download #{download.remote_path} -> #{download.local_path}"
+
+    case result do
+      {:ok, output, 0} ->
+        %{
+          cmd: cmd_desc,
+          status: :ok,
+          output: output,
+          exit_code: 0,
+          attempts: attempt,
+          duration_ms: duration
+        }
+
+      {:error, reason} ->
+        %{
+          cmd: cmd_desc,
+          status: :error,
+          output: inspect(reason),
+          exit_code: -1,
+          attempts: attempt,
+          duration_ms: duration
+        }
+    end
+  end
+
   defp execute_local_command(%Command{} = cmd) do
     if cmd.sudo do
       Local.run_sudo(cmd)
@@ -313,11 +371,39 @@ defmodule Nexus.Executor.TaskRunner do
     end
   end
 
+  defp execute_local_command(%Upload{} = _upload) do
+    # Local upload doesn't make sense - it's a copy
+    {:error, :upload_not_supported_locally}
+  end
+
+  defp execute_local_command(%Download{} = _download) do
+    # Local download doesn't make sense - it's a copy
+    {:error, :download_not_supported_locally}
+  end
+
   defp execute_remote_command(%Command{} = cmd, conn) do
     if cmd.sudo do
       Connection.exec_sudo(conn, cmd.cmd, timeout: cmd.timeout, sudo_user: cmd.user)
     else
       Connection.exec(conn, cmd.cmd, timeout: cmd.timeout)
+    end
+  end
+
+  defp execute_remote_command(%Upload{} = upload, conn) do
+    opts = [sudo: upload.sudo, mode: upload.mode]
+
+    case SFTP.upload(conn, upload.local_path, upload.remote_path, opts) do
+      :ok -> {:ok, "uploaded #{upload.local_path} -> #{upload.remote_path}", 0}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp execute_remote_command(%Download{} = download, conn) do
+    opts = [sudo: download.sudo]
+
+    case SFTP.download(conn, download.remote_path, download.local_path, opts) do
+      :ok -> {:ok, "downloaded #{download.remote_path} -> #{download.local_path}", 0}
+      {:error, reason} -> {:error, reason}
     end
   end
 

@@ -24,7 +24,7 @@ defmodule Nexus.DSL.Parser do
 
   """
 
-  alias Nexus.Types.{Command, Config, Host, HostGroup, Task}
+  alias Nexus.Types.{Command, Config, Download, Host, HostGroup, Task, Upload}
 
   @type parse_error :: {:error, String.t()}
   @type parse_result :: {:ok, Config.t()} | parse_error()
@@ -126,7 +126,7 @@ defmodule Nexus.DSL.Parser.DSL do
   @moduledoc false
   # Internal module that provides the DSL macros and functions
 
-  alias Nexus.Types.{Command, Config, Host, HostGroup, Task}
+  alias Nexus.Types.{Command, Config, Download, Host, HostGroup, Task, Upload}
 
   @doc false
   def run_dsl(fun) do
@@ -322,6 +322,82 @@ defmodule Nexus.DSL.Parser.DSL do
     updated_task = Task.add_command(task, command)
     Process.put(:nexus_current_task, updated_task)
     :ok
+  end
+
+  @doc """
+  Uploads a local file to remote hosts.
+
+  ## Options
+
+    * `:sudo` - Upload to a location requiring root access
+    * `:mode` - File permissions to set (e.g., 0o644)
+    * `:notify` - Handler to trigger after upload
+
+  ## Examples
+
+      task :deploy, on: :web do
+        upload "dist/app.tar.gz", "/opt/app/release.tar.gz"
+        upload "config.txt", "/etc/app/config.txt", sudo: true, mode: 0o644
+      end
+
+  """
+  defmacro upload(local_path, remote_path, opts \\ []) do
+    quote do
+      unquote(__MODULE__).do_upload(unquote(local_path), unquote(remote_path), unquote(opts))
+    end
+  end
+
+  def do_upload(local_path, remote_path, opts)
+      when is_binary(local_path) and is_binary(remote_path) and is_list(opts) do
+    task = Process.get(:nexus_current_task)
+
+    if is_nil(task) do
+      raise ArgumentError, "upload must be called inside a task block"
+    end
+
+    upload_cmd = Upload.new(local_path, remote_path, opts)
+    updated_task = add_command_to_task(task, upload_cmd)
+    Process.put(:nexus_current_task, updated_task)
+    :ok
+  end
+
+  @doc """
+  Downloads a file from remote hosts to a local path.
+
+  ## Options
+
+    * `:sudo` - Download from a location requiring root access
+
+  ## Examples
+
+      task :collect_logs, on: :web do
+        download "/var/log/app.log", "logs/app.log"
+      end
+
+  """
+  defmacro download(remote_path, local_path, opts \\ []) do
+    quote do
+      unquote(__MODULE__).do_download(unquote(remote_path), unquote(local_path), unquote(opts))
+    end
+  end
+
+  def do_download(remote_path, local_path, opts)
+      when is_binary(remote_path) and is_binary(local_path) and is_list(opts) do
+    task = Process.get(:nexus_current_task)
+
+    if is_nil(task) do
+      raise ArgumentError, "download must be called inside a task block"
+    end
+
+    download_cmd = Download.new(remote_path, local_path, opts)
+    updated_task = add_command_to_task(task, download_cmd)
+    Process.put(:nexus_current_task, updated_task)
+    :ok
+  end
+
+  # Helper to add any command type to a task
+  defp add_command_to_task(%Task{} = task, command) do
+    %{task | commands: task.commands ++ [command]}
   end
 
   @doc """
