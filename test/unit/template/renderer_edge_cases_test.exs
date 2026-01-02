@@ -121,7 +121,7 @@ defmodule Nexus.Template.RendererEdgeCasesTest do
     end
 
     test "handles EEx comments" do
-      template = "Before<%# This is a comment %>After"
+      template = "Before<%!-- This is a comment --%>After"
       {:ok, result} = Renderer.render_string(template, %{})
       assert result == "BeforeAfter"
     end

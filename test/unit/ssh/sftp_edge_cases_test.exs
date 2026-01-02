@@ -1,7 +1,6 @@
 defmodule Nexus.SSH.SFTPEdgeCasesTest do
   use ExUnit.Case, async: true
 
-  alias Nexus.SSH.SFTP
   alias Nexus.Types.{Download, Upload}
 
   @moduletag :unit
