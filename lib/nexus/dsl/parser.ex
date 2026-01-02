@@ -24,7 +24,7 @@ defmodule Nexus.DSL.Parser do
 
   """
 
-  alias Nexus.Types.{Command, Config, Download, Host, HostGroup, Task, Template, Upload}
+  alias Nexus.Types.{Command, Config, Download, Host, HostGroup, Task, Template, Upload, WaitFor}
 
   @type parse_error :: {:error, String.t()}
   @type parse_result :: {:ok, Config.t()} | parse_error()
@@ -126,7 +126,7 @@ defmodule Nexus.DSL.Parser.DSL do
   @moduledoc false
   # Internal module that provides the DSL macros and functions
 
-  alias Nexus.Types.{Command, Config, Download, Host, HostGroup, Task, Template, Upload}
+  alias Nexus.Types.{Command, Config, Download, Host, HostGroup, Task, Template, Upload, WaitFor}
 
   @doc false
   def run_dsl(fun) do
@@ -277,6 +277,7 @@ defmodule Nexus.DSL.Parser.DSL do
       on: Keyword.get(opts, :on, :local),
       timeout: Keyword.get(opts, :timeout, 300_000),
       strategy: Keyword.get(opts, :strategy, :parallel),
+      batch_size: Keyword.get(opts, :batch_size, 1),
       commands: []
     }
 
@@ -434,6 +435,59 @@ defmodule Nexus.DSL.Parser.DSL do
 
     template_cmd = Template.new(source, destination, opts)
     updated_task = add_command_to_task(task, template_cmd)
+    Process.put(:nexus_current_task, updated_task)
+    :ok
+  end
+
+  @doc """
+  Waits for a health check to pass before continuing.
+
+  Used in rolling deployments to verify services are healthy
+  before proceeding to the next batch of hosts.
+
+  ## Types
+
+    * `:http` - HTTP GET request, checks for 2xx status
+    * `:tcp` - TCP connection check
+    * `:command` - Shell command, checks for exit code 0
+
+  ## Options
+
+    * `:timeout` - Total time to wait in milliseconds (default: 60_000)
+    * `:interval` - Time between checks in milliseconds (default: 5_000)
+    * `:expected_status` - Expected HTTP status code (for :http)
+    * `:expected_body` - Expected body pattern (for :http)
+
+  ## Examples
+
+      task :deploy, on: :web, strategy: :rolling do
+        run "systemctl restart app", sudo: true
+        wait_for :http, "http://localhost:4000/health",
+          timeout: 60_000,
+          interval: 5_000
+      end
+
+      task :db_check, on: :db do
+        wait_for :tcp, "localhost:5432", timeout: 30_000
+      end
+
+  """
+  defmacro wait_for(type, target, opts \\ []) do
+    quote do
+      unquote(__MODULE__).do_wait_for(unquote(type), unquote(target), unquote(opts))
+    end
+  end
+
+  def do_wait_for(type, target, opts)
+      when type in [:http, :tcp, :command] and is_binary(target) and is_list(opts) do
+    task = Process.get(:nexus_current_task)
+
+    if is_nil(task) do
+      raise ArgumentError, "wait_for must be called inside a task block"
+    end
+
+    wait_for_cmd = WaitFor.new(type, target, opts)
+    updated_task = add_command_to_task(task, wait_for_cmd)
     Process.put(:nexus_current_task, updated_task)
     :ok
   end

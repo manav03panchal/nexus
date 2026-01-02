@@ -149,7 +149,7 @@ defmodule Nexus.Types do
     Represents a task definition with commands and dependencies.
     """
 
-    @type strategy :: :parallel | :serial
+    @type strategy :: :parallel | :serial | :rolling
 
     @type t :: %__MODULE__{
             name: atom(),
@@ -157,7 +157,8 @@ defmodule Nexus.Types do
             on: atom() | :local,
             commands: [Command.t()],
             timeout: pos_integer(),
-            strategy: strategy()
+            strategy: strategy(),
+            batch_size: pos_integer()
           }
 
     @enforce_keys [:name]
@@ -167,7 +168,8 @@ defmodule Nexus.Types do
       on: :local,
       commands: [],
       timeout: 300_000,
-      strategy: :parallel
+      strategy: :parallel,
+      batch_size: 1
     ]
 
     @doc """
@@ -181,7 +183,8 @@ defmodule Nexus.Types do
         on: Keyword.get(opts, :on, :local),
         commands: Keyword.get(opts, :commands, []),
         timeout: Keyword.get(opts, :timeout, 300_000),
-        strategy: Keyword.get(opts, :strategy, :parallel)
+        strategy: Keyword.get(opts, :strategy, :parallel),
+        batch_size: Keyword.get(opts, :batch_size, 1)
       }
     end
 
