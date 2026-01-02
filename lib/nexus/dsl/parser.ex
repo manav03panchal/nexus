@@ -24,7 +24,7 @@ defmodule Nexus.DSL.Parser do
 
   """
 
-  alias Nexus.Types.{Command, Config, Download, Host, HostGroup, Task, Upload}
+  alias Nexus.Types.{Command, Config, Download, Host, HostGroup, Task, Template, Upload}
 
   @type parse_error :: {:error, String.t()}
   @type parse_result :: {:ok, Config.t()} | parse_error()
@@ -126,7 +126,7 @@ defmodule Nexus.DSL.Parser.DSL do
   @moduledoc false
   # Internal module that provides the DSL macros and functions
 
-  alias Nexus.Types.{Command, Config, Download, Host, HostGroup, Task, Upload}
+  alias Nexus.Types.{Command, Config, Download, Host, HostGroup, Task, Template, Upload}
 
   @doc false
   def run_dsl(fun) do
@@ -391,6 +391,49 @@ defmodule Nexus.DSL.Parser.DSL do
 
     download_cmd = Download.new(remote_path, local_path, opts)
     updated_task = add_command_to_task(task, download_cmd)
+    Process.put(:nexus_current_task, updated_task)
+    :ok
+  end
+
+  @doc """
+  Renders an EEx template and uploads it to remote hosts.
+
+  Templates are rendered locally with variable substitution, then uploaded.
+  Variables are available in templates as `@var_name`.
+
+  ## Options
+
+    * `:vars` - Map of variables to bind in the template
+    * `:sudo` - Upload to a location requiring root access
+    * `:mode` - File permissions to set (e.g., 0o644)
+    * `:notify` - Handler to trigger after template upload
+
+  ## Examples
+
+      task :configure, on: :web do
+        template "templates/nginx.conf.eex", "/etc/nginx/nginx.conf",
+          vars: %{port: 8080, workers: 4},
+          sudo: true,
+          mode: 0o644
+      end
+
+  """
+  defmacro template(source, destination, opts \\ []) do
+    quote do
+      unquote(__MODULE__).do_template(unquote(source), unquote(destination), unquote(opts))
+    end
+  end
+
+  def do_template(source, destination, opts)
+      when is_binary(source) and is_binary(destination) and is_list(opts) do
+    task = Process.get(:nexus_current_task)
+
+    if is_nil(task) do
+      raise ArgumentError, "template must be called inside a task block"
+    end
+
+    template_cmd = Template.new(source, destination, opts)
+    updated_task = add_command_to_task(task, template_cmd)
     Process.put(:nexus_current_task, updated_task)
     :ok
   end

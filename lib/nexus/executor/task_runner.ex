@@ -26,7 +26,8 @@ defmodule Nexus.Executor.TaskRunner do
   alias Nexus.Executor.Local
   alias Nexus.SSH.{Connection, Pool, SFTP}
   alias Nexus.Telemetry
-  alias Nexus.Types.{Command, Download, Host, Upload}
+  alias Nexus.Template.Renderer
+  alias Nexus.Types.{Command, Download, Host, Template, Upload}
   alias Nexus.Types.Task, as: NexusTask
 
   @type task_result :: %{
@@ -363,6 +364,35 @@ defmodule Nexus.Executor.TaskRunner do
     end
   end
 
+  defp execute_with_retry(%Template{} = template, executor, attempt) do
+    start_time = System.monotonic_time(:millisecond)
+    result = executor.(template)
+    duration = System.monotonic_time(:millisecond) - start_time
+    cmd_desc = "template #{template.source} -> #{template.destination}"
+
+    case result do
+      {:ok, output, 0} ->
+        %{
+          cmd: cmd_desc,
+          status: :ok,
+          output: output,
+          exit_code: 0,
+          attempts: attempt,
+          duration_ms: duration
+        }
+
+      {:error, reason} ->
+        %{
+          cmd: cmd_desc,
+          status: :error,
+          output: inspect(reason),
+          exit_code: -1,
+          attempts: attempt,
+          duration_ms: duration
+        }
+    end
+  end
+
   defp execute_local_command(%Command{} = cmd) do
     if cmd.sudo do
       Local.run_sudo(cmd)
@@ -379,6 +409,11 @@ defmodule Nexus.Executor.TaskRunner do
   defp execute_local_command(%Download{} = _download) do
     # Local download doesn't make sense - it's a copy
     {:error, :download_not_supported_locally}
+  end
+
+  defp execute_local_command(%Template{} = _template) do
+    # Local template doesn't make sense - templates are for remote hosts
+    {:error, :template_not_supported_locally}
   end
 
   defp execute_remote_command(%Command{} = cmd, conn) do
@@ -404,6 +439,36 @@ defmodule Nexus.Executor.TaskRunner do
     case SFTP.download(conn, download.remote_path, download.local_path, opts) do
       :ok -> {:ok, "downloaded #{download.remote_path} -> #{download.local_path}", 0}
       {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp execute_remote_command(%Template{} = template, conn) do
+    # First, render the template locally
+    case Renderer.render_file(template.source, template.vars) do
+      {:ok, content} ->
+        # Write to a temp file, then upload
+        upload_rendered_template(conn, content, template)
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp upload_rendered_template(conn, content, template) do
+    # Create a temp file with the rendered content
+    temp_path =
+      System.tmp_dir!() |> Path.join("nexus_template_#{:erlang.unique_integer([:positive])}")
+
+    try do
+      File.write!(temp_path, content)
+      opts = [sudo: template.sudo, mode: template.mode]
+
+      case SFTP.upload(conn, temp_path, template.destination, opts) do
+        :ok -> {:ok, "template #{template.source} -> #{template.destination}", 0}
+        {:error, reason} -> {:error, reason}
+      end
+    after
+      File.rm(temp_path)
     end
   end
 
