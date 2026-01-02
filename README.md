@@ -48,10 +48,7 @@ nexus run build
 
 ## Documentation
 
-- [Getting Started](docs/getting-started.md)
-- [Configuration Reference](docs/configuration.md)
-- [CLI Reference](docs/cli.md)
-- [Examples](docs/examples.md)
+Full documentation available at [humancorp.xyz/nexus](https://humancorp.xyz/nexus)
 
 ## Example
 
