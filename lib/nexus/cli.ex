@@ -23,7 +23,7 @@ defmodule Nexus.CLI do
 
   """
 
-  alias Nexus.CLI.{Init, List, Preflight, Run, Validate}
+  alias Nexus.CLI.{Init, List, Preflight, Run, Secret, Validate}
 
   @version Mix.Project.config()[:version] || "0.1.0"
 
@@ -261,6 +261,78 @@ defmodule Nexus.CLI do
               help: "Overwrite existing file"
             ]
           ]
+        ],
+        secret: [
+          name: "secret",
+          about: "Manage encrypted secrets",
+          subcommands: [
+            init: [
+              name: "init",
+              about: "Initialize the secrets vault with a new master key"
+            ],
+            set: [
+              name: "set",
+              about: "Set a secret value",
+              args: [
+                name: [
+                  value_name: "NAME",
+                  help: "Secret name",
+                  required: true,
+                  parser: :string
+                ],
+                value: [
+                  value_name: "VALUE",
+                  help: "Secret value (omit to prompt securely)",
+                  required: false,
+                  parser: :string
+                ]
+              ],
+              flags: [
+                force: [
+                  short: "-f",
+                  long: "--force",
+                  help: "Overwrite existing secret"
+                ]
+              ]
+            ],
+            get: [
+              name: "get",
+              about: "Get a secret value",
+              args: [
+                name: [
+                  value_name: "NAME",
+                  help: "Secret name",
+                  required: true,
+                  parser: :string
+                ]
+              ]
+            ],
+            list: [
+              name: "list",
+              about: "List all secret names",
+              options: [
+                format: [
+                  value_name: "FORMAT",
+                  long: "--format",
+                  help: "Output format (text, json)",
+                  parser: &parse_format/1,
+                  default: :text
+                ]
+              ]
+            ],
+            delete: [
+              name: "delete",
+              about: "Delete a secret",
+              args: [
+                name: [
+                  value_name: "NAME",
+                  help: "Secret name",
+                  required: true,
+                  parser: :string
+                ]
+              ]
+            ]
+          ]
         ]
       ]
     )
@@ -338,6 +410,27 @@ defmodule Nexus.CLI do
 
   defp execute({:ok, [:preflight], parsed}) do
     Preflight.execute(parsed)
+  end
+
+  # Secret subcommands
+  defp execute({:ok, [:secret, :init], parsed}) do
+    Secret.execute_init(parsed)
+  end
+
+  defp execute({:ok, [:secret, :set], parsed}) do
+    Secret.execute_set(parsed)
+  end
+
+  defp execute({:ok, [:secret, :get], parsed}) do
+    Secret.execute_get(parsed)
+  end
+
+  defp execute({:ok, [:secret, :list], parsed}) do
+    Secret.execute_list(parsed)
+  end
+
+  defp execute({:ok, [:secret, :delete], parsed}) do
+    Secret.execute_delete(parsed)
   end
 
   defp print_subcommand_help(subcmd) do

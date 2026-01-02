@@ -346,4 +346,50 @@ defmodule Nexus.DSL.Parser.DSL do
   def do_env(var) when is_atom(var) do
     System.get_env(to_string(var)) || ""
   end
+
+  @doc """
+  Retrieves a secret value from the encrypted vault.
+
+  Secrets must be set using `nexus secret set <name> <value>` before use.
+
+  ## Examples
+
+      task :deploy do
+        run "docker login -p \#{secret("DOCKER_PASSWORD")}"
+      end
+
+      task :db_migrate do
+        run "DATABASE_URL=\#{secret("DATABASE_URL")} mix ecto.migrate"
+      end
+
+  """
+  defmacro secret(name) do
+    quote do
+      unquote(__MODULE__).do_secret(unquote(name))
+    end
+  end
+
+  def do_secret(name) when is_binary(name) do
+    alias Nexus.Secrets.Vault
+
+    case Vault.get(name) do
+      {:ok, value} ->
+        value
+
+      {:error, :not_found} ->
+        raise ArgumentError,
+              "secret '#{name}' not found. Use 'nexus secret set #{name}' to add it."
+
+      {:error, :no_key_available} ->
+        raise ArgumentError,
+              "no master key available. Run 'nexus secret init' first."
+
+      {:error, reason} ->
+        raise ArgumentError, "failed to retrieve secret '#{name}': #{inspect(reason)}"
+    end
+  end
+
+  def do_secret(name) when is_atom(name) do
+    do_secret(to_string(name))
+  end
 end
