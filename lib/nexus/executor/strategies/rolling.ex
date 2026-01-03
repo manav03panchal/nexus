@@ -20,9 +20,9 @@ defmodule Nexus.Executor.Strategies.Rolling do
 
   """
 
-  alias Nexus.Executor.{HealthCheck, TaskRunner}
-  alias Nexus.SSH.Pool
-  alias Nexus.Types.{Host, WaitFor}
+  alias Nexus.Executor.HealthCheck
+  alias Nexus.SSH.{Connection, Pool}
+  alias Nexus.Types.{Command, Host, WaitFor}
   alias Nexus.Types.Task, as: NexusTask
 
   @type rolling_opts :: [
@@ -44,7 +44,13 @@ defmodule Nexus.Executor.Strategies.Rolling do
     * `{:error, reason}` - Deployment aborted
 
   """
-  @spec run(NexusTask.t(), [Host.t()], rolling_opts()) :: {:ok, [TaskRunner.host_result()]}
+  @type host_result :: %{
+          host: atom() | :local,
+          status: :ok | :error,
+          commands: [map()]
+        }
+
+  @spec run(NexusTask.t(), [Host.t()], rolling_opts()) :: {:ok, [host_result()]}
   def run(%NexusTask{} = task, hosts, opts \\ []) do
     batch_size = Keyword.get(opts, :batch_size, 1)
     continue_on_error = Keyword.get(opts, :continue_on_error, false)
@@ -160,7 +166,7 @@ defmodule Nexus.Executor.Strategies.Rolling do
   defp run_commands(conn, commands, continue_on_error) do
     {results, _} =
       Enum.reduce_while(commands, {[], :continue}, fn cmd, {acc, _} ->
-        result = TaskRunner.execute_command(cmd, conn)
+        result = execute_command(cmd, conn)
 
         if result.status == :error and not continue_on_error do
           {:halt, {[result | acc], :stopped}}
@@ -170,6 +176,51 @@ defmodule Nexus.Executor.Strategies.Rolling do
       end)
 
     {:ok, Enum.reverse(results)}
+  end
+
+  defp execute_command(%Command{} = cmd, conn) do
+    start_time = System.monotonic_time(:millisecond)
+
+    result =
+      if cmd.sudo do
+        Connection.exec_sudo(conn, cmd.cmd, timeout: cmd.timeout, sudo_user: cmd.user)
+      else
+        Connection.exec(conn, cmd.cmd, timeout: cmd.timeout)
+      end
+
+    duration = System.monotonic_time(:millisecond) - start_time
+
+    case result do
+      {:ok, output, 0} ->
+        %{
+          cmd: cmd.cmd,
+          status: :ok,
+          output: output,
+          exit_code: 0,
+          attempts: 1,
+          duration_ms: duration
+        }
+
+      {:ok, output, exit_code} ->
+        %{
+          cmd: cmd.cmd,
+          status: :error,
+          output: output,
+          exit_code: exit_code,
+          attempts: 1,
+          duration_ms: duration
+        }
+
+      {:error, reason} ->
+        %{
+          cmd: cmd.cmd,
+          status: :error,
+          output: inspect(reason),
+          exit_code: -1,
+          attempts: 1,
+          duration_ms: duration
+        }
+    end
   end
 
   defp run_health_checks(_hosts, [], _opts), do: :ok
