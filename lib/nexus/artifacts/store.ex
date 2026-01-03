@@ -164,7 +164,42 @@ defmodule Nexus.Artifacts.Store do
   end
 
   defp artifact_path(pipeline_id, artifact_name) do
-    Path.join(storage_path(pipeline_id), artifact_name)
+    # Validate artifact_name to prevent path traversal
+    safe_name = validate_artifact_name!(artifact_name)
+    Path.join(storage_path(pipeline_id), safe_name)
+  end
+
+  # Validate artifact name to prevent path traversal attacks
+  # Only allows alphanumeric, dash, underscore, dot (no directory separators)
+  @artifact_name_pattern ~r/^[a-zA-Z0-9._-]+$/
+  defp validate_artifact_name!(name) when is_binary(name) do
+    # Remove any directory components for safety
+    basename = Path.basename(name)
+
+    cond do
+      name != basename ->
+        raise ArgumentError,
+              "artifact name cannot contain directory separators: #{inspect(name)}"
+
+      String.contains?(name, "..") ->
+        raise ArgumentError,
+              "artifact name cannot contain path traversal: #{inspect(name)}"
+
+      not Regex.match?(@artifact_name_pattern, name) ->
+        raise ArgumentError,
+              "artifact name contains invalid characters: #{inspect(name)}"
+
+      String.length(name) > 255 ->
+        raise ArgumentError,
+              "artifact name too long (max 255 chars): #{inspect(name)}"
+
+      true ->
+        basename
+    end
+  end
+
+  defp validate_artifact_name!(name) do
+    raise ArgumentError, "artifact name must be a string, got: #{inspect(name)}"
   end
 
   defp generate_pipeline_id do

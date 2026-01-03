@@ -24,17 +24,21 @@ defmodule Nexus.Executor.TaskRunner do
   """
 
   alias Nexus.Executor.Local
+  alias Nexus.Resources.Executor, as: ResourceExecutor
   alias Nexus.Resources.Types.Command, as: ResourceCommand
-  alias Nexus.SSH.{Connection, Pool}
+  alias Nexus.Resources.Types.{Directory, Group, Package, Service, User}
+  alias Nexus.Resources.Types.File, as: FileResource
+  alias Nexus.SSH.{Connection, Pool, SFTP}
   alias Nexus.Telemetry
-  alias Nexus.Types.{Command, Host}
+  alias Nexus.Types.{Command, Download, Host, Template, Upload, WaitFor}
   alias Nexus.Types.Task, as: NexusTask
 
   @type task_result :: %{
           task: atom(),
           status: :ok | :error,
           duration_ms: non_neg_integer(),
-          host_results: [host_result()]
+          host_results: [host_result()],
+          triggered_handlers: [atom()]
         }
 
   @type host_result :: %{
@@ -96,12 +100,16 @@ defmodule Nexus.Executor.TaskRunner do
         overall_status = if Enum.all?(host_results, &(&1.status == :ok)), do: :ok, else: :error
         Telemetry.emit_task_stop(task.name, duration, overall_status)
 
+        # Collect triggered handlers from successful commands
+        triggered_handlers = collect_triggered_handlers(host_results)
+
         {:ok,
          %{
            task: task.name,
            status: overall_status,
            duration_ms: duration,
-           host_results: host_results
+           host_results: host_results,
+           triggered_handlers: triggered_handlers
          }}
 
       {:error, reason} ->
@@ -227,17 +235,17 @@ defmodule Nexus.Executor.TaskRunner do
   end
 
   defp run_commands_locally(commands, continue_on_error) do
-    run_commands(commands, continue_on_error, &execute_local_command/1)
+    run_commands(commands, continue_on_error, :local, nil)
   end
 
   defp run_commands_remotely(conn, commands, continue_on_error) do
-    run_commands(commands, continue_on_error, &execute_remote_command(&1, conn))
+    run_commands(commands, continue_on_error, :remote, conn)
   end
 
-  defp run_commands(commands, continue_on_error, executor) do
+  defp run_commands(commands, continue_on_error, mode, conn) do
     {results, _} =
       Enum.reduce_while(commands, {[], :continue}, fn cmd, {acc, _} ->
-        result = execute_with_retry(cmd, executor)
+        result = execute_command(cmd, mode, conn)
 
         if result.status == :error and not continue_on_error do
           {:halt, {[result | acc], :stopped}}
@@ -247,6 +255,62 @@ defmodule Nexus.Executor.TaskRunner do
       end)
 
     {:ok, Enum.reverse(results)}
+  end
+
+  # Dispatch to appropriate executor based on command type
+  defp execute_command(%Command{} = cmd, mode, conn) do
+    executor =
+      if mode == :local, do: &execute_local_command/1, else: &execute_remote_command(&1, conn)
+
+    execute_with_retry(cmd, executor)
+  end
+
+  defp execute_command(%ResourceCommand{} = cmd, mode, conn) do
+    executor =
+      if mode == :local, do: &execute_local_command/1, else: &execute_remote_command(&1, conn)
+
+    execute_with_retry(cmd, executor)
+  end
+
+  defp execute_command(%Upload{} = upload, mode, conn) do
+    execute_upload(upload, mode, conn)
+  end
+
+  defp execute_command(%Download{} = download, mode, conn) do
+    execute_download(download, mode, conn)
+  end
+
+  defp execute_command(%Template{} = template, mode, conn) do
+    execute_template(template, mode, conn)
+  end
+
+  defp execute_command(%WaitFor{} = wait_for, mode, conn) do
+    execute_wait_for(wait_for, mode, conn)
+  end
+
+  # Resource types - delegate to Resources.Executor
+  defp execute_command(%Package{} = resource, mode, conn) do
+    execute_resource(resource, mode, conn)
+  end
+
+  defp execute_command(%Service{} = resource, mode, conn) do
+    execute_resource(resource, mode, conn)
+  end
+
+  defp execute_command(%FileResource{} = resource, mode, conn) do
+    execute_resource(resource, mode, conn)
+  end
+
+  defp execute_command(%Directory{} = resource, mode, conn) do
+    execute_resource(resource, mode, conn)
+  end
+
+  defp execute_command(%User{} = resource, mode, conn) do
+    execute_resource(resource, mode, conn)
+  end
+
+  defp execute_command(%Group{} = resource, mode, conn) do
+    execute_resource(resource, mode, conn)
   end
 
   defp execute_with_retry(%Command{} = cmd, executor) do
@@ -296,7 +360,7 @@ defmodule Nexus.Executor.TaskRunner do
           {:ok, output, 0} ->
             Telemetry.emit_command_stop(cmd.cmd, duration, 0)
 
-            %{
+            base_result = %{
               cmd: cmd.cmd,
               status: :ok,
               output: output,
@@ -304,6 +368,9 @@ defmodule Nexus.Executor.TaskRunner do
               attempts: 1,
               duration_ms: duration
             }
+
+            # Add notify handler if specified and command succeeded
+            if cmd.notify, do: Map.put(base_result, :notify, cmd.notify), else: base_result
 
           {:ok, output, exit_code} ->
             Telemetry.emit_command_stop(cmd.cmd, duration, exit_code)
@@ -533,5 +600,504 @@ defmodule Nexus.Executor.TaskRunner do
           ]
         }
     end)
+  end
+
+  # Collect triggered handler names from successful commands
+  defp collect_triggered_handlers(host_results) do
+    host_results
+    |> Enum.flat_map(& &1.commands)
+    |> Enum.filter(&(&1.status == :ok and Map.has_key?(&1, :notify)))
+    |> Enum.map(& &1.notify)
+    |> Enum.uniq()
+  end
+
+  # ============================================================================
+  # Upload execution
+  # ============================================================================
+
+  defp execute_upload(%Upload{} = upload, :local, _conn) do
+    # Local upload is just a file copy
+    start_time = System.monotonic_time(:millisecond)
+    cmd_desc = "upload #{upload.local_path} -> #{upload.remote_path}"
+    Telemetry.emit_command_start(cmd_desc, :local)
+
+    result =
+      case File.cp(upload.local_path, upload.remote_path) do
+        :ok ->
+          if upload.mode do
+            File.chmod(upload.remote_path, upload.mode)
+          end
+
+          {:ok, "uploaded"}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+
+    duration = System.monotonic_time(:millisecond) - start_time
+    build_file_op_result(cmd_desc, result, duration, upload.notify)
+  end
+
+  defp execute_upload(%Upload{} = upload, :remote, conn) do
+    start_time = System.monotonic_time(:millisecond)
+    cmd_desc = "upload #{upload.local_path} -> #{upload.remote_path}"
+    Telemetry.emit_command_start(cmd_desc, :remote)
+
+    result =
+      SFTP.upload(conn, upload.local_path, upload.remote_path,
+        sudo: upload.sudo,
+        mode: upload.mode
+      )
+
+    duration = System.monotonic_time(:millisecond) - start_time
+
+    case result do
+      :ok ->
+        Telemetry.emit_command_stop(cmd_desc, duration, 0)
+        build_file_op_result(cmd_desc, {:ok, "uploaded"}, duration, upload.notify)
+
+      {:error, reason} ->
+        Telemetry.emit_command_stop(cmd_desc, duration, 1)
+        build_file_op_result(cmd_desc, {:error, reason}, duration, nil)
+    end
+  end
+
+  # ============================================================================
+  # Download execution
+  # ============================================================================
+
+  defp execute_download(%Download{} = download, :local, _conn) do
+    # Local download is just a file copy (reverse direction)
+    start_time = System.monotonic_time(:millisecond)
+    cmd_desc = "download #{download.remote_path} -> #{download.local_path}"
+    Telemetry.emit_command_start(cmd_desc, :local)
+
+    result =
+      case File.cp(download.remote_path, download.local_path) do
+        :ok -> {:ok, "downloaded"}
+        {:error, reason} -> {:error, reason}
+      end
+
+    duration = System.monotonic_time(:millisecond) - start_time
+    build_file_op_result(cmd_desc, result, duration, nil)
+  end
+
+  defp execute_download(%Download{} = download, :remote, conn) do
+    start_time = System.monotonic_time(:millisecond)
+    cmd_desc = "download #{download.remote_path} -> #{download.local_path}"
+    Telemetry.emit_command_start(cmd_desc, :remote)
+
+    result = SFTP.download(conn, download.remote_path, download.local_path, sudo: download.sudo)
+
+    duration = System.monotonic_time(:millisecond) - start_time
+
+    case result do
+      :ok ->
+        Telemetry.emit_command_stop(cmd_desc, duration, 0)
+        build_file_op_result(cmd_desc, {:ok, "downloaded"}, duration, nil)
+
+      {:error, reason} ->
+        Telemetry.emit_command_stop(cmd_desc, duration, 1)
+        build_file_op_result(cmd_desc, {:error, reason}, duration, nil)
+    end
+  end
+
+  # ============================================================================
+  # Template execution
+  # ============================================================================
+
+  defp execute_template(%Template{} = template, mode, conn) do
+    start_time = System.monotonic_time(:millisecond)
+    cmd_desc = "template #{template.source} -> #{template.destination}"
+    Telemetry.emit_command_start(cmd_desc, mode)
+
+    # Read and render template
+    result =
+      with {:ok, content} <- File.read(template.source),
+           {:ok, rendered} <- render_template(content, template.vars) do
+        # Write to temp file, then upload
+        # Use cryptographic random for temp filename to prevent prediction attacks
+        random_suffix = :crypto.strong_rand_bytes(16) |> Base.encode16(case: :lower)
+        temp_path = System.tmp_dir!() |> Path.join("nexus_template_#{random_suffix}")
+
+        File.write!(temp_path, rendered)
+
+        upload_result =
+          if mode == :local do
+            case File.cp(temp_path, template.destination) do
+              :ok ->
+                if template.mode, do: File.chmod(template.destination, template.mode)
+                :ok
+
+              error ->
+                error
+            end
+          else
+            SFTP.upload(conn, temp_path, template.destination,
+              sudo: template.sudo,
+              mode: template.mode
+            )
+          end
+
+        File.rm(temp_path)
+        upload_result
+      end
+
+    duration = System.monotonic_time(:millisecond) - start_time
+
+    case result do
+      :ok ->
+        Telemetry.emit_command_stop(cmd_desc, duration, 0)
+        build_file_op_result(cmd_desc, {:ok, "rendered and uploaded"}, duration, template.notify)
+
+      {:error, reason} ->
+        Telemetry.emit_command_stop(cmd_desc, duration, 1)
+        build_file_op_result(cmd_desc, {:error, reason}, duration, nil)
+    end
+  end
+
+  defp render_template(content, vars) do
+    try do
+      # Convert map to keyword list for EEx bindings
+      bindings = Enum.map(vars, fn {k, v} -> {k, v} end)
+      rendered = EEx.eval_string(content, assigns: bindings)
+      {:ok, rendered}
+    rescue
+      e -> {:error, {:template_error, Exception.message(e)}}
+    end
+  end
+
+  # ============================================================================
+  # WaitFor execution
+  # ============================================================================
+
+  defp execute_wait_for(%WaitFor{} = wait_for, mode, conn) do
+    start_time = System.monotonic_time(:millisecond)
+    cmd_desc = "wait_for #{wait_for.type} #{wait_for.target}"
+    Telemetry.emit_command_start(cmd_desc, mode)
+
+    result = do_wait_for(wait_for, mode, conn, start_time)
+
+    duration = System.monotonic_time(:millisecond) - start_time
+    Telemetry.emit_command_stop(cmd_desc, duration, if(result == :ok, do: 0, else: 1))
+
+    case result do
+      :ok ->
+        %{
+          cmd: cmd_desc,
+          status: :ok,
+          output: "condition met",
+          exit_code: 0,
+          attempts: 1,
+          duration_ms: duration
+        }
+
+      {:error, :timeout} ->
+        %{
+          cmd: cmd_desc,
+          status: :error,
+          output: "timeout waiting for condition",
+          exit_code: 1,
+          attempts: 1,
+          duration_ms: duration
+        }
+
+      {:error, reason} ->
+        %{
+          cmd: cmd_desc,
+          status: :error,
+          output: inspect(reason),
+          exit_code: 1,
+          attempts: 1,
+          duration_ms: duration
+        }
+    end
+  end
+
+  defp do_wait_for(%WaitFor{} = wait_for, mode, conn, start_time) do
+    elapsed = System.monotonic_time(:millisecond) - start_time
+
+    if elapsed > wait_for.timeout do
+      {:error, :timeout}
+    else
+      case check_wait_condition(wait_for, mode, conn) do
+        true ->
+          :ok
+
+        false ->
+          Process.sleep(wait_for.interval)
+          do_wait_for(wait_for, mode, conn, start_time)
+      end
+    end
+  end
+
+  defp check_wait_condition(%WaitFor{type: :tcp, target: target}, :local, _conn) do
+    # Parse host:port and check locally
+    case String.split(target, ":") do
+      [host, port_str] ->
+        port = String.to_integer(port_str)
+        check_tcp_connection(host, port)
+
+      _ ->
+        false
+    end
+  end
+
+  defp check_wait_condition(%WaitFor{type: :tcp, target: target}, :remote, conn) do
+    # Use nc or bash to check port on remote host
+    case String.split(target, ":") do
+      [host, port_str] ->
+        # Use bash's /dev/tcp for portability
+        check_cmd =
+          "timeout 1 bash -c 'cat < /dev/null > /dev/tcp/#{host}/#{port_str}' 2>/dev/null"
+
+        case Connection.exec(conn, check_cmd, timeout: 5_000) do
+          {:ok, _, 0} -> true
+          _ -> false
+        end
+
+      _ ->
+        false
+    end
+  end
+
+  defp check_wait_condition(%WaitFor{type: :http, target: url}, :local, _conn) do
+    check_http_endpoint(url)
+  end
+
+  defp check_wait_condition(%WaitFor{type: :http, target: url}, :remote, conn) do
+    # Use curl on remote host
+    check_cmd = "curl -s -o /dev/null -w '%{http_code}' --connect-timeout 2 '#{url}'"
+
+    case Connection.exec(conn, check_cmd, timeout: 5_000) do
+      {:ok, status_str, 0} ->
+        status = String.trim(status_str) |> String.to_integer()
+        status >= 200 and status < 300
+
+      _ ->
+        false
+    end
+  end
+
+  defp check_wait_condition(%WaitFor{type: :command, target: cmd}, mode, conn) do
+    check_cmd = %Command{
+      cmd: cmd,
+      sudo: false,
+      user: nil,
+      timeout: 10_000,
+      retries: 0,
+      retry_delay: 1_000,
+      when: true
+    }
+
+    executor =
+      if mode == :local do
+        &execute_local_command/1
+      else
+        &execute_remote_command(&1, conn)
+      end
+
+    case executor.(check_cmd) do
+      {:ok, _, 0} -> true
+      _ -> false
+    end
+  end
+
+  defp check_tcp_connection(host, port) do
+    case :gen_tcp.connect(String.to_charlist(host), port, [], 1_000) do
+      {:ok, socket} ->
+        :gen_tcp.close(socket)
+        true
+
+      {:error, _} ->
+        false
+    end
+  end
+
+  defp check_http_endpoint(url) do
+    # Simple HTTP check using httpc
+    :inets.start()
+    :ssl.start()
+
+    case :httpc.request(:get, {String.to_charlist(url), []}, [timeout: 5_000], []) do
+      {:ok, {{_, status, _}, _, _}} when status >= 200 and status < 300 ->
+        true
+
+      _ ->
+        false
+    end
+  end
+
+  # ============================================================================
+  # Resource execution (Package, Service, File, Directory, User, Group)
+  # ============================================================================
+
+  defp execute_resource(resource, mode, conn) do
+    start_time = System.monotonic_time(:millisecond)
+    resource_desc = describe_resource(resource)
+    Telemetry.emit_command_start(resource_desc, mode)
+
+    # Build context with facts - need to detect OS
+    context = build_resource_context(mode, conn)
+
+    # Execute via Resources.Executor
+    {:ok, result} = ResourceExecutor.execute(resource, conn, context)
+
+    duration = System.monotonic_time(:millisecond) - start_time
+
+    Telemetry.emit_command_stop(
+      resource_desc,
+      duration,
+      if(result.status in [:ok, :changed], do: 0, else: 1)
+    )
+
+    # Convert Resources.Result to command_result format
+    convert_resource_result(result, resource_desc, duration)
+  end
+
+  defp build_resource_context(:local, _conn) do
+    %{
+      facts: detect_local_facts(),
+      host_id: :local,
+      check_mode: false
+    }
+  end
+
+  defp build_resource_context(:remote, conn) do
+    %{
+      facts: detect_remote_facts(conn),
+      host_id: :remote,
+      check_mode: false
+    }
+  end
+
+  defp detect_local_facts do
+    # Detect local OS family
+    case :os.type() do
+      {:unix, :darwin} -> %{os_family: :darwin, os: :macos}
+      {:unix, :linux} -> detect_linux_family_local()
+      {:win32, _} -> %{os_family: :windows, os: :windows}
+      _ -> %{os_family: :unknown, os: :unknown}
+    end
+  end
+
+  defp detect_linux_family_local do
+    cond do
+      File.exists?("/etc/debian_version") -> %{os_family: :debian, os: :linux}
+      File.exists?("/etc/redhat-release") -> %{os_family: :redhat, os: :linux}
+      File.exists?("/etc/arch-release") -> %{os_family: :arch, os: :linux}
+      File.exists?("/etc/alpine-release") -> %{os_family: :alpine, os: :linux}
+      true -> %{os_family: :linux, os: :linux}
+    end
+  end
+
+  defp detect_remote_facts(conn) do
+    # Try to detect OS family on remote host
+    case Connection.exec(conn, "cat /etc/os-release 2>/dev/null || echo 'unknown'",
+           timeout: 5_000
+         ) do
+      {:ok, output, 0} ->
+        parse_os_release(output)
+
+      _ ->
+        # Fallback: try uname
+        case Connection.exec(conn, "uname -s", timeout: 5_000) do
+          {:ok, "Darwin" <> _, 0} -> %{os_family: :darwin, os: :macos}
+          {:ok, "Linux" <> _, 0} -> %{os_family: :linux, os: :linux}
+          _ -> %{os_family: :unknown, os: :unknown}
+        end
+    end
+  end
+
+  defp parse_os_release(output) do
+    lines = String.split(output, "\n")
+    id = find_os_release_value(lines, "ID=")
+    id_like = find_os_release_value(lines, "ID_LIKE=")
+
+    os_family =
+      cond do
+        id in ["debian", "ubuntu", "raspbian"] -> :debian
+        id_like =~ "debian" -> :debian
+        id in ["rhel", "centos", "fedora", "rocky", "alma"] -> :redhat
+        id_like =~ "rhel" or id_like =~ "fedora" -> :redhat
+        id == "arch" -> :arch
+        id == "alpine" -> :alpine
+        true -> :linux
+      end
+
+    %{os_family: os_family, os: :linux}
+  end
+
+  defp find_os_release_value(lines, prefix) do
+    case Enum.find(lines, &String.starts_with?(&1, prefix)) do
+      nil -> ""
+      line -> line |> String.replace(prefix, "") |> String.trim() |> String.replace("\"", "")
+    end
+  end
+
+  defp describe_resource(%Package{name: name}), do: "package[#{name}]"
+  defp describe_resource(%Service{name: name}), do: "service[#{name}]"
+  defp describe_resource(%FileResource{path: path}), do: "file[#{path}]"
+  defp describe_resource(%Directory{path: path}), do: "directory[#{path}]"
+  defp describe_resource(%User{name: name}), do: "user[#{name}]"
+  defp describe_resource(%Group{name: name}), do: "group[#{name}]"
+  defp describe_resource(r), do: inspect(r)
+
+  defp convert_resource_result(result, cmd_desc, duration) do
+    base = %{
+      cmd: cmd_desc,
+      status: if(result.status in [:ok, :changed, :skipped], do: :ok, else: :error),
+      output: result.message || status_to_message(result.status),
+      exit_code: if(result.status == :failed, do: 1, else: 0),
+      attempts: 1,
+      duration_ms: duration
+    }
+
+    # Add notify if present and changed
+    if result.notify && result.status == :changed do
+      Map.put(base, :notify, result.notify)
+    else
+      base
+    end
+  end
+
+  defp status_to_message(:ok), do: "already in desired state"
+  defp status_to_message(:changed), do: "changed"
+  defp status_to_message(:skipped), do: "skipped"
+  defp status_to_message(:failed), do: "failed"
+
+  # ============================================================================
+  # Helpers
+  # ============================================================================
+
+  defp build_file_op_result(cmd_desc, result, duration, notify) do
+    base_result =
+      case result do
+        {:ok, output} ->
+          %{
+            cmd: cmd_desc,
+            status: :ok,
+            output: output,
+            exit_code: 0,
+            attempts: 1,
+            duration_ms: duration
+          }
+
+        {:error, reason} ->
+          %{
+            cmd: cmd_desc,
+            status: :error,
+            output: inspect(reason),
+            exit_code: 1,
+            attempts: 1,
+            duration_ms: duration
+          }
+      end
+
+    if notify && match?({:ok, _}, result) do
+      Map.put(base_result, :notify, notify)
+    else
+      base_result
+    end
   end
 end

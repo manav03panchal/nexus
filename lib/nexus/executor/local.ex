@@ -150,12 +150,14 @@ defmodule Nexus.Executor.Local do
   def run_sudo(command, opts) when is_binary(command) do
     user = Keyword.get(opts, :user)
 
+    # Use -n for non-interactive mode to fail fast if password required
+    # This prevents hanging on password prompt in automated contexts
     sudo_cmd =
       if user do
         validated_user = validate_sudo_user!(user)
-        "sudo -u #{validated_user} #{command}"
+        "sudo -n -u #{validated_user} #{command}"
       else
-        "sudo #{command}"
+        "sudo -n #{command}"
       end
 
     run(sudo_cmd, opts)

@@ -66,9 +66,12 @@ defmodule Nexus.SSH.Proxy do
     user = Keyword.get(target_opts, :user, current_user())
     timeout = Keyword.get(target_opts, :timeout, 30_000)
 
+    # Respect silently_accept_hosts option from target_opts (--insecure flag)
+    insecure = Keyword.get(target_opts, :silently_accept_hosts, false)
+
     ssh_opts = [
       user: String.to_charlist(user),
-      silently_accept_hosts: true,
+      silently_accept_hosts: insecure,
       connect_timeout: timeout
     ]
 
@@ -124,6 +127,7 @@ defmodule Nexus.SSH.Proxy do
   # Fallback: Execute commands through the jump host
   defp connect_via_exec(target_host, jump_host, target_opts, jump_opts) do
     target_port = Keyword.get(target_opts, :port, 22)
+    insecure = Keyword.get(target_opts, :silently_accept_hosts, false)
 
     # Connect to jump host first
     case Connection.connect(jump_host, jump_opts) do
@@ -135,7 +139,8 @@ defmodule Nexus.SSH.Proxy do
           target_host: target_host,
           target_port: target_port,
           target_user: Keyword.get(target_opts, :user, current_user()),
-          target_identity: Keyword.get(target_opts, :identity)
+          target_identity: Keyword.get(target_opts, :identity),
+          insecure: insecure
         }
 
         {:ok, proxy_conn}
@@ -149,13 +154,21 @@ defmodule Nexus.SSH.Proxy do
     user = Keyword.get(jump_opts, :user, current_user())
     port = Keyword.get(jump_opts, :port, 22)
     identity = Keyword.get(jump_opts, :identity)
+    insecure = Keyword.get(jump_opts, :silently_accept_hosts, false)
 
     args = ["ssh", "-W", "#{target_host}:#{target_port}"]
     args = args ++ ["-p", to_string(port)]
     args = args ++ ["-l", user]
     args = if identity, do: args ++ ["-i", Path.expand(identity)], else: args
-    args = args ++ ["-o", "StrictHostKeyChecking=no"]
-    args = args ++ ["-o", "UserKnownHostsFile=/dev/null"]
+
+    # Only disable host key checking if explicitly requested (insecure mode)
+    args =
+      if insecure do
+        args ++ ["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null"]
+      else
+        args
+      end
+
     args ++ [jump_host]
   end
 
@@ -186,7 +199,7 @@ defmodule Nexus.SSH.ProxyConnection do
 
   alias Nexus.SSH.Connection
 
-  defstruct [:jump_conn, :target_host, :target_port, :target_user, :target_identity]
+  defstruct [:jump_conn, :target_host, :target_port, :target_user, :target_identity, :insecure]
 
   @doc """
   Executes a command on the target host through the jump connection.
@@ -211,8 +224,14 @@ defmodule Nexus.SSH.ProxyConnection do
     args =
       if proxy.target_identity, do: args ++ ["-i", Path.expand(proxy.target_identity)], else: args
 
-    args = args ++ ["-o", "StrictHostKeyChecking=no"]
-    args = args ++ ["-o", "UserKnownHostsFile=/dev/null"]
+    # Only disable host key checking if explicitly requested (insecure mode)
+    args =
+      if proxy.insecure do
+        args ++ ["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null"]
+      else
+        args
+      end
+
     args = args ++ ["-o", "BatchMode=yes"]
     args = args ++ [proxy.target_host]
     args = args ++ [escape_command(command)]

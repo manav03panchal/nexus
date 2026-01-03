@@ -7,16 +7,30 @@ defmodule Nexus.SSH.AuthTest do
 
   describe "resolve/2" do
     test "uses explicit identity when provided" do
-      # Create a temp key file
+      # Create a temp key file with secure permissions (0600)
       tmp_dir = System.tmp_dir!()
       key_path = Path.join(tmp_dir, "test_key_#{:rand.uniform(10000)}")
       File.write!(key_path, "fake key content")
+      File.chmod!(key_path, 0o600)
 
       on_exit(fn -> File.rm(key_path) end)
 
       {:ok, opts} = Auth.resolve("example.com", identity: key_path)
 
       assert Keyword.get(opts, :identity) == key_path
+    end
+
+    test "returns error for identity file with insecure permissions" do
+      # Create a temp key file with insecure permissions (0644)
+      tmp_dir = System.tmp_dir!()
+      key_path = Path.join(tmp_dir, "test_key_insecure_#{:rand.uniform(10000)}")
+      File.write!(key_path, "fake key content")
+      File.chmod!(key_path, 0o644)
+
+      on_exit(fn -> File.rm(key_path) end)
+
+      {:error, {:identity_insecure_permissions, ^key_path}} =
+        Auth.resolve("example.com", identity: key_path)
     end
 
     test "returns error for non-existent identity file" do

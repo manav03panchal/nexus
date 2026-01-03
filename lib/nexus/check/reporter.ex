@@ -6,6 +6,8 @@ defmodule Nexus.Check.Reporter do
   """
 
   alias Nexus.Check.Differ
+  alias Nexus.Resources.Types.Command, as: ResourceCommand
+  alias Nexus.Resources.Types.{Directory, File, Group, Package, Service, User}
   alias Nexus.Types.{Command, Download, Template, Upload, WaitFor}
 
   @type check_result :: %{
@@ -14,7 +16,13 @@ defmodule Nexus.Check.Reporter do
           command_type: atom(),
           description: String.t(),
           diff: Differ.diff() | nil,
-          action: :would_run | :would_upload | :would_download | :would_render | :would_wait
+          action:
+            :would_run
+            | :would_upload
+            | :would_download
+            | :would_render
+            | :would_wait
+            | :would_change
         }
 
   @doc """
@@ -119,12 +127,123 @@ defmodule Nexus.Check.Reporter do
     }
   end
 
+  # Resource types
+  def check_command(%ResourceCommand{} = cmd, host, _context) do
+    guards = []
+    guards = if cmd.creates, do: ["creates=#{cmd.creates}" | guards], else: guards
+    guards = if cmd.removes, do: ["removes=#{cmd.removes}" | guards], else: guards
+    guards = if cmd.unless, do: ["unless=#{cmd.unless}" | guards], else: guards
+    guards = if cmd.onlyif, do: ["onlyif=#{cmd.onlyif}" | guards], else: guards
+
+    desc =
+      if guards == [] do
+        "$ #{cmd.cmd}"
+      else
+        "$ #{cmd.cmd} (#{Enum.join(Enum.reverse(guards), ", ")})"
+      end
+
+    %{
+      task: nil,
+      host: host,
+      command_type: :command,
+      description: desc,
+      diff: nil,
+      action: :would_run
+    }
+  end
+
+  def check_command(%File{} = file, host, _context) do
+    state_desc = if file.state == :present, do: "create/update", else: "remove"
+
+    %{
+      task: nil,
+      host: host,
+      command_type: :file,
+      description: "file[#{file.path}] #{state_desc}",
+      diff: nil,
+      action: :would_change
+    }
+  end
+
+  def check_command(%Directory{} = dir, host, _context) do
+    state_desc = if dir.state == :present, do: "create", else: "remove"
+
+    %{
+      task: nil,
+      host: host,
+      command_type: :directory,
+      description: "directory[#{dir.path}] #{state_desc}",
+      diff: nil,
+      action: :would_change
+    }
+  end
+
+  def check_command(%Package{} = pkg, host, _context) do
+    state_desc =
+      case pkg.state do
+        :present -> "install"
+        :absent -> "remove"
+        :latest -> "upgrade"
+      end
+
+    %{
+      task: nil,
+      host: host,
+      command_type: :package,
+      description: "package[#{pkg.name}] #{state_desc}",
+      diff: nil,
+      action: :would_change
+    }
+  end
+
+  def check_command(%Service{} = svc, host, _context) do
+    actions = []
+    actions = if svc.state, do: ["state=#{svc.state}" | actions], else: actions
+    actions = if svc.enabled != nil, do: ["enabled=#{svc.enabled}" | actions], else: actions
+    desc = Enum.join(Enum.reverse(actions), ", ")
+
+    %{
+      task: nil,
+      host: host,
+      command_type: :service,
+      description: "service[#{svc.name}] #{desc}",
+      diff: nil,
+      action: :would_change
+    }
+  end
+
+  def check_command(%User{} = user, host, _context) do
+    state_desc = if user.state == :present, do: "create/update", else: "remove"
+
+    %{
+      task: nil,
+      host: host,
+      command_type: :user,
+      description: "user[#{user.name}] #{state_desc}",
+      diff: nil,
+      action: :would_change
+    }
+  end
+
+  def check_command(%Group{} = group, host, _context) do
+    state_desc = if group.state == :present, do: "create", else: "remove"
+
+    %{
+      task: nil,
+      host: host,
+      command_type: :group,
+      description: "group[#{group.name}] #{state_desc}",
+      diff: nil,
+      action: :would_change
+    }
+  end
+
   @doc """
   Computes what a template would render to.
   """
   @spec render_template_preview(Template.t()) :: {:ok, String.t()} | {:error, term()}
   def render_template_preview(%Template{} = template) do
-    case File.read(template.source) do
+    case Elixir.File.read(template.source) do
       {:ok, content} ->
         try do
           bindings =
@@ -152,6 +271,7 @@ defmodule Nexus.Check.Reporter do
         :would_download -> "v"
         :would_render -> "~"
         :would_wait -> "?"
+        :would_change -> "*"
       end
 
     IO.puts("  [#{action_icon}] #{result.description}")

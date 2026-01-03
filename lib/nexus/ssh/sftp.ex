@@ -247,7 +247,9 @@ defmodule Nexus.SSH.SFTP do
   end
 
   defp upload_with_sudo(conn, data, remote_path, mode) do
-    temp_path = "#{@temp_prefix}#{:erlang.unique_integer([:positive])}"
+    # Use cryptographic random for temp filename to prevent prediction attacks
+    random_suffix = :crypto.strong_rand_bytes(16) |> Base.encode16(case: :lower)
+    temp_path = "#{@temp_prefix}#{random_suffix}"
 
     with {:ok, sftp_channel} <- start_sftp_channel(conn),
          :ok <- write_file(sftp_channel, temp_path, data) do

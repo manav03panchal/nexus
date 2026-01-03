@@ -282,6 +282,11 @@ defmodule Nexus.SSH.Connection do
       {:ok, output, 0} = Connection.exec_sudo(conn, "cat /etc/shadow", sudo_user: "root")
 
   """
+  # Pattern for validating sudo usernames (POSIX compliant)
+  # Must start with lowercase letter or underscore, followed by lowercase letters, digits, underscores, or hyphens
+  # Maximum 31 characters (POSIX standard)
+  @sudo_user_pattern ~r/^[a-z_][a-z0-9_-]{0,30}$/
+
   @spec exec_sudo(conn(), String.t(), keyword()) ::
           {:ok, output(), exit_code()} | {:error, term()}
   def exec_sudo(conn, command, opts \\ []) do
@@ -290,8 +295,15 @@ defmodule Nexus.SSH.Connection do
 
     sudo_prefix =
       case sudo_user do
-        nil -> "sudo"
-        user -> "sudo -u #{user}"
+        nil ->
+          # Use -n for non-interactive mode to fail fast if password required
+          "sudo -n"
+
+        user ->
+          case validate_sudo_user(user) do
+            :ok -> "sudo -n -u #{user}"
+            {:error, reason} -> raise ArgumentError, reason
+          end
       end
 
     # For non-interactive sudo, we assume NOPASSWD is configured
@@ -299,6 +311,26 @@ defmodule Nexus.SSH.Connection do
     sudo_command = "#{sudo_prefix} -- sh -c #{escape_shell_command(command)}"
 
     exec(conn, sudo_command, opts)
+  end
+
+  defp validate_sudo_user(user) when is_binary(user) do
+    cond do
+      String.length(user) > 31 ->
+        {:error, "sudo user too long (max 31 chars): #{user}"}
+
+      String.starts_with?(user, "-") ->
+        {:error, "sudo user cannot start with hyphen: #{user}"}
+
+      not Regex.match?(@sudo_user_pattern, user) ->
+        {:error, "invalid sudo user format: #{user}"}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp validate_sudo_user(user) do
+    {:error, "sudo user must be a string, got: #{inspect(user)}"}
   end
 
   @doc """

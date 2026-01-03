@@ -349,9 +349,13 @@ defmodule Nexus.Preflight.Checker do
     # Use the same SSH connection logic as the executor
     alias Nexus.SSH.Connection
 
+    # Respect the silently_accept_hosts option from CLI (--insecure flag)
+    # Default to false for secure host key verification
+    silently_accept = Keyword.get(ssh_opts, :silently_accept_hosts, false)
+
     connect_opts =
       ssh_opts
-      |> Keyword.put(:silently_accept_hosts, true)
+      |> Keyword.put(:silently_accept_hosts, silently_accept)
       |> Keyword.put(:timeout, @tcp_connect_timeout)
 
     case Connection.connect(host, connect_opts) do

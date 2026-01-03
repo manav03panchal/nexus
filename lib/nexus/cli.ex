@@ -155,6 +155,10 @@ defmodule Nexus.CLI do
             plain: [
               long: "--plain",
               help: "Disable colors and formatting"
+            ],
+            insecure: [
+              long: "--insecure",
+              help: "Accept unknown SSH host keys without prompting (insecure)"
             ]
           ]
         ],
@@ -255,6 +259,10 @@ defmodule Nexus.CLI do
             plain: [
               long: "--plain",
               help: "Disable colors and formatting"
+            ],
+            insecure: [
+              long: "--insecure",
+              help: "Accept unknown SSH host keys without prompting (insecure)"
             ]
           ]
         ],

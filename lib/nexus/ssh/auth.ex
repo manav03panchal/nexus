@@ -17,6 +17,8 @@ defmodule Nexus.SSH.Auth do
 
   """
 
+  import Bitwise
+
   @type auth_method ::
           {:identity, Path.t()}
           | :agent
@@ -206,8 +208,25 @@ defmodule Nexus.SSH.Auth do
       not readable?(expanded) ->
         {:error, {:identity_not_readable, expanded}}
 
+      not secure_permissions?(expanded) ->
+        {:error, {:identity_insecure_permissions, expanded}}
+
       true ->
         {:ok, {:identity, expanded}}
+    end
+  end
+
+  # Check if file has secure permissions (owner read/write only, no group/world access)
+  # SSH keys should have mode 0600 or 0400
+  defp secure_permissions?(path) do
+    case File.stat(path) do
+      {:ok, %{mode: mode}} ->
+        # Check that group and world have no access (mode & 0o077 == 0)
+        (mode &&& 0o077) == 0
+
+      {:error, _} ->
+        # If we can't stat, let the file access check fail later
+        true
     end
   end
 

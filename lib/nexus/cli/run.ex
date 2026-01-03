@@ -111,7 +111,9 @@ defmodule Nexus.CLI.Run do
   end
 
   defp build_ssh_opts(options) do
-    opts = [silently_accept_hosts: true]
+    # Default to secure host key verification (silently_accept_hosts: false)
+    # Use --insecure flag to disable verification (not recommended)
+    opts = [silently_accept_hosts: options[:insecure] == true]
 
     opts =
       if options[:identity] do
@@ -361,6 +363,15 @@ defmodule Nexus.CLI.Run do
       # Print task output
       print_task_results(result.task_results, opts)
 
+      # Print handler results if any
+      handler_results = Map.get(result, :handler_results, [])
+
+      if handler_results != [] do
+        IO.puts("")
+        IO.puts("Handlers:")
+        print_handler_results(handler_results, opts)
+      end
+
       IO.puts("")
       IO.puts(String.duplicate("=", 40))
 
@@ -375,6 +386,15 @@ defmodule Nexus.CLI.Run do
       IO.puts("Duration: #{result.duration_ms}ms")
       IO.puts("Tasks: #{result.tasks_succeeded}/#{result.tasks_run} succeeded")
 
+      handlers_succeeded = Map.get(result, :handlers_succeeded, 0)
+      handlers_failed = Map.get(result, :handlers_failed, 0)
+
+      if handlers_succeeded + handlers_failed > 0 do
+        IO.puts(
+          "Handlers: #{handlers_succeeded}/#{handlers_succeeded + handlers_failed} succeeded"
+        )
+      end
+
       if result.aborted_at do
         IO.puts("Aborted at: #{result.aborted_at}")
       end
@@ -388,6 +408,25 @@ defmodule Nexus.CLI.Run do
 
     Enum.each(task_results, fn task_result ->
       print_task_result(task_result, verbose)
+    end)
+  end
+
+  defp print_handler_results(handler_results, opts) do
+    verbose = opts[:verbose] || false
+
+    Enum.each(handler_results, fn handler_result ->
+      print_handler_result(handler_result, verbose)
+    end)
+  end
+
+  defp print_handler_result(handler_result, verbose) do
+    handler_name = handler_result.handler
+    status_marker = if handler_result.status == :ok, do: "[ok]", else: "[FAILED]"
+
+    IO.puts("#{status_marker} Handler: #{handler_name}")
+
+    Enum.each(Map.get(handler_result, :host_results, []), fn host_result ->
+      print_host_result(host_result, verbose)
     end)
   end
 

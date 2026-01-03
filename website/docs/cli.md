@@ -60,6 +60,7 @@ nexus run <tasks> [options]
 |--------|-------|---------|-------------|
 | `--config FILE` | `-c` | `nexus.exs` | Path to configuration file |
 | `--dry-run` | `-n` | | Show execution plan without running |
+| `--check` | | | Preview changes without executing (shows diffs for templates) |
 | `--verbose` | `-v` | | Show detailed output including timings |
 | `--quiet` | `-q` | | Minimal output (only errors) |
 | `--continue-on-error` | | | Continue executing if a task fails |
@@ -69,6 +70,9 @@ nexus run <tasks> [options]
 | `--parallel-limit N` | `-p` | `10` | Maximum concurrent tasks |
 | `--format FORMAT` | | `text` | Output format: `text` or `json` |
 | `--plain` | | | Disable colors and formatting |
+| `--insecure` | | | Accept unknown SSH host keys without verification (not recommended) |
+| `--tags TAGS` | `-t` | | Only run tasks with these tags (comma-separated) |
+| `--skip-tags TAGS` | | | Skip tasks with these tags (comma-separated) |
 
 #### Examples
 
@@ -100,6 +104,18 @@ nexus run deploy --format json
 
 # Limit concurrent tasks
 nexus run deploy --parallel-limit 5
+
+# Check mode - preview changes without executing
+nexus run deploy --check
+
+# Run only tasks tagged with 'production'
+nexus run deploy --tags production
+
+# Skip tasks tagged with 'slow'
+nexus run deploy --skip-tags slow
+
+# Accept unknown SSH host keys (CI/ephemeral hosts)
+nexus run deploy --insecure
 ```
 
 #### Output Examples

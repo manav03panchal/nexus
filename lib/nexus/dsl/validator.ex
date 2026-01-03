@@ -10,7 +10,7 @@ defmodule Nexus.DSL.Validator do
   - Configuration values are within valid ranges
   """
 
-  alias Nexus.Types.{Config, Task}
+  alias Nexus.Types.{Config, Download, Task, Template, Upload}
 
   @type validation_error :: {atom(), String.t()}
   @type validation_result :: :ok | {:error, [validation_error()]}
@@ -150,17 +150,25 @@ defmodule Nexus.DSL.Validator do
       acc
       |> validate_command_timeout(task.name, command)
       |> validate_command_retries(task.name, command)
+      |> validate_path_traversal(task.name, command)
     end)
   end
 
   defp validate_command_timeout(errors, task_name, command) do
-    if command.timeout > 0 do
-      errors
-    else
-      [
-        {:command, "command in task :#{task_name} has invalid timeout: #{command.timeout}"}
-        | errors
-      ]
+    # Only validate timeout for Command type which has the timeout field
+    case Map.get(command, :timeout) do
+      nil ->
+        # Upload, Download, Template, WaitFor, and resource types don't have timeout
+        errors
+
+      timeout when is_integer(timeout) and timeout > 0 ->
+        errors
+
+      timeout ->
+        [
+          {:command, "command in task :#{task_name} has invalid timeout: #{timeout}"}
+          | errors
+        ]
     end
   end
 
@@ -184,6 +192,57 @@ defmodule Nexus.DSL.Validator do
         errors
     end
   end
+
+  # Validate paths don't contain traversal sequences
+  defp validate_path_traversal(errors, task_name, %Upload{} = upload) do
+    errors
+    |> check_path_traversal(task_name, :upload, :local_path, upload.local_path)
+    |> check_path_traversal(task_name, :upload, :remote_path, upload.remote_path)
+  end
+
+  defp validate_path_traversal(errors, task_name, %Download{} = download) do
+    errors
+    |> check_path_traversal(task_name, :download, :local_path, download.local_path)
+    |> check_path_traversal(task_name, :download, :remote_path, download.remote_path)
+  end
+
+  defp validate_path_traversal(errors, task_name, %Template{} = template) do
+    errors
+    |> check_path_traversal(task_name, :template, :source, template.source)
+    |> check_path_traversal(task_name, :template, :destination, template.destination)
+  end
+
+  defp validate_path_traversal(errors, _task_name, _command), do: errors
+
+  defp check_path_traversal(errors, task_name, cmd_type, field, path) when is_binary(path) do
+    # Normalize path and check for traversal attempts
+    # We don't allow ".." components in paths as they could escape intended directories
+    normalized = Path.expand(path)
+    segments = Path.split(path)
+
+    cond do
+      # Check for explicit ".." in path segments
+      Enum.member?(segments, "..") ->
+        [
+          {:path_traversal,
+           "#{cmd_type} in task :#{task_name} has path traversal in #{field}: #{path}"}
+          | errors
+        ]
+
+      # Check if path starts with ~ but expands outside home
+      String.starts_with?(path, "~") and not String.starts_with?(normalized, System.user_home!()) ->
+        [
+          {:path_traversal,
+           "#{cmd_type} in task :#{task_name} has suspicious home path in #{field}: #{path}"}
+          | errors
+        ]
+
+      true ->
+        errors
+    end
+  end
+
+  defp check_path_traversal(errors, _task_name, _cmd_type, _field, _path), do: errors
 
   @doc """
   Returns a list of all hosts that a task will run on.

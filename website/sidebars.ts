@@ -9,6 +9,7 @@ const sidebars: SidebarsConfig = {
     "examples",
     "architecture",
     "ssh",
+    "security",
     "troubleshooting",
   ],
 };
