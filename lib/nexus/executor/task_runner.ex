@@ -402,33 +402,29 @@ defmodule Nexus.Executor.TaskRunner do
   end
 
   defp build_resource_command(%ResourceCommand{} = cmd) do
-    parts = []
+    # Build command - env vars require sh -c wrapper to work
+    base_cmd = cmd.cmd
 
-    # Environment variables
-    parts =
-      if cmd.env != %{} do
-        env_str =
-          Enum.map_join(cmd.env, " ", fn {k, v} ->
-            "#{k}=#{shell_escape(v)}"
-          end)
-
-        [env_str | parts]
-      else
-        parts
-      end
-
-    # Change directory
-    parts =
+    # Add cd prefix if cwd specified
+    cmd_with_cwd =
       if cmd.cwd do
-        ["cd #{shell_escape(cmd.cwd)} &&" | parts]
+        "cd #{shell_escape(cmd.cwd)} && #{base_cmd}"
       else
-        parts
+        base_cmd
       end
 
-    # The actual command
-    parts = parts ++ [cmd.cmd]
+    # Add environment variables - requires sh -c wrapper
+    if cmd.env != %{} do
+      env_str =
+        Enum.map_join(cmd.env, " ", fn {k, v} ->
+          "#{k}=#{shell_escape(v)}"
+        end)
 
-    Enum.join(parts, " ")
+      # Wrap in sh -c so env vars are available to the command
+      "#{env_str} sh -c #{shell_escape(cmd_with_cwd)}"
+    else
+      cmd_with_cwd
+    end
   end
 
   defp shell_escape(str), do: "'" <> String.replace(to_string(str), "'", "'\\''") <> "'"
