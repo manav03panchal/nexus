@@ -9,11 +9,11 @@ defmodule Nexus.Application do
 
   @impl true
   def start(_type, _args) do
-    # Create ETS table for SSH pool registry
-    # This must happen before any SSH operations
+    # Create ETS table for SSH pool management
+    # Owned by the Application process to ensure it outlives individual pools
     create_pool_table()
 
-    # Attach telemetry handlers before starting supervision tree
+    # Enable telemetry event handlers
     Nexus.Telemetry.setup()
 
     children = [
@@ -26,12 +26,9 @@ defmodule Nexus.Application do
   end
 
   defp create_pool_table do
-    # Create ETS table for SSH connection pool registry
-    # Table is owned by the Application process to ensure it outlives individual pools
-    if :ets.whereis(:nexus_ssh_pools) == :undefined do
-      :ets.new(:nexus_ssh_pools, [:named_table, :public, :set, {:read_concurrency, true}])
-    end
-  rescue
-    ArgumentError -> :ok
+    # Create the ETS table for SSH pool registry
+    # Using :public so Pool module can read/write
+    # Using :set for fast key lookups
+    :ets.new(:nexus_ssh_pools, [:named_table, :public, :set, {:read_concurrency, true}])
   end
 end

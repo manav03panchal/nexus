@@ -121,7 +121,7 @@ mv nexus ~/.local/bin/
 
 ```bash
 nexus --version
-# Output: nexus <version>
+# nexus 0.1.0
 
 nexus --help
 # Shows available commands and options

@@ -21,7 +21,7 @@ defmodule Nexus.Executor.Pipeline do
 
   alias Nexus.DAG
   alias Nexus.Executor.TaskRunner
-  alias Nexus.Facts.Cache
+  alias Nexus.Telemetry
   alias Nexus.Types.Config
   alias Nexus.Types.Task, as: NexusTask
 
@@ -69,16 +69,8 @@ defmodule Nexus.Executor.Pipeline do
   """
   @spec run(Config.t(), [atom()], run_opts()) :: {:ok, pipeline_result()} | {:error, term()}
   def run(%Config{} = config, target_tasks, opts \\ []) do
-    # Initialize the facts cache for this pipeline run
-    Cache.init()
-
-    try do
-      with {:ok, plan} <- build_execution_plan(config, target_tasks) do
-        execute_plan(config, plan, opts)
-      end
-    after
-      # Clean up the facts cache
-      Cache.clear()
+    with {:ok, plan} <- build_execution_plan(config, target_tasks) do
+      execute_plan(config, plan, opts)
     end
   end
 
@@ -175,6 +167,9 @@ defmodule Nexus.Executor.Pipeline do
 
   # Execute the plan phase by phase
   defp execute_plan(%Config{} = config, plan, opts) do
+    target_tasks = Map.keys(plan.task_details)
+    Telemetry.emit_pipeline_start(target_tasks, %{total_tasks: plan.total_tasks})
+
     start_time = System.monotonic_time(:millisecond)
     continue_on_error = Keyword.get(opts, :continue_on_error, config.continue_on_error)
     parallel_limit = Keyword.get(opts, :parallel_limit, 10)
@@ -217,19 +212,28 @@ defmodule Nexus.Executor.Pipeline do
     duration = System.monotonic_time(:millisecond) - start_time
     overall_status = if final_state.tasks_failed > 0, do: :error, else: :ok
 
-    {:ok,
-     %{
-       status: overall_status,
-       duration_ms: duration,
-       tasks_run: final_state.tasks_succeeded + final_state.tasks_failed,
-       tasks_succeeded: final_state.tasks_succeeded,
-       tasks_failed: final_state.tasks_failed,
-       task_results: final_state.task_results,
-       aborted_at: final_state.aborted_at
-     }}
+    result = %{
+      status: overall_status,
+      duration_ms: duration,
+      tasks_run: final_state.tasks_succeeded + final_state.tasks_failed,
+      tasks_succeeded: final_state.tasks_succeeded,
+      tasks_failed: final_state.tasks_failed,
+      task_results: final_state.task_results,
+      aborted_at: final_state.aborted_at
+    }
+
+    Telemetry.emit_pipeline_stop(duration, result)
+
+    {:ok, result}
   end
 
+  # Default timeout for individual task execution (10 minutes)
+  @default_task_timeout 600_000
+
   defp execute_phase(config, phase, task_details, opts, parallel_limit) do
+    # Use task timeout from config or opts, with a sensible default
+    task_timeout = Keyword.get(opts, :task_timeout, @default_task_timeout)
+
     # Execute all tasks in the phase in parallel (up to the limit)
     phase
     |> Task.async_stream(
@@ -239,7 +243,7 @@ defmodule Nexus.Executor.Pipeline do
         TaskRunner.run(task, hosts, opts)
       end,
       max_concurrency: parallel_limit,
-      timeout: :infinity
+      timeout: task_timeout
     )
     |> Enum.map(fn
       {:ok, {:ok, result}} ->

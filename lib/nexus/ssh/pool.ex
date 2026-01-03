@@ -96,7 +96,8 @@ defmodule Nexus.SSH.Pool do
     NimblePool.start_link(
       worker: {__MODULE__, worker_state},
       pool_size: pool_size,
-      lazy: true
+      lazy: true,
+      worker_idle_timeout: Keyword.get(opts, :idle_timeout, @default_idle_timeout)
     )
   end
 
@@ -190,12 +191,16 @@ defmodule Nexus.SSH.Pool do
   end
 
   defp ensure_pool_table do
+    # ETS table is created by Nexus.Application on startup
+    # This check guards against using the pool before application starts
     if :ets.whereis(@pool_table) == :undefined do
-      :ets.new(@pool_table, [:named_table, :public, :set, {:read_concurrency, true}])
+      raise RuntimeError, """
+      SSH pool ETS table not found. Ensure Nexus.Application is started.
+
+      If running in tests, add to test_helper.exs:
+        :ets.new(:nexus_ssh_pools, [:named_table, :public, :set, {:read_concurrency, true}])
+      """
     end
-  rescue
-    # Table already exists
-    ArgumentError -> :ok
   end
 
   @doc """
@@ -269,20 +274,24 @@ defmodule Nexus.SSH.Pool do
 
   @impl NimblePool
   def init_worker(%{host: host, connect_opts: opts} = pool_state) do
-    # Lazy initialization - connection created on first checkout
-    {:ok, {host, opts, nil}, pool_state}
+    # Use async initialization to avoid blocking the pool process
+    # This allows other checkouts to proceed while connection is being established
+    {:async, fn -> async_connect(host, opts) end, pool_state}
+  end
+
+  # Async connection helper - returns worker state tuple
+  defp async_connect(host, opts) do
+    case Connection.connect(host, opts) do
+      {:ok, conn} -> {host, opts, conn}
+      {:error, _reason} -> {host, opts, nil}
+    end
   end
 
   @impl NimblePool
-  def handle_checkout(:checkout, _from, {host, opts, nil}, pool_state) do
-    # Create connection lazily
-    case Connection.connect(host, opts) do
-      {:ok, conn} ->
-        {:ok, conn, {host, opts, conn}, pool_state}
-
-      {:error, reason} ->
-        {:remove, reason, pool_state}
-    end
+  def handle_checkout(:checkout, _from, {_host, _opts, nil}, pool_state) do
+    # Worker initialized but connection failed during async init
+    # Remove this worker and let pool create a new one
+    {:remove, :connection_failed, pool_state}
   end
 
   def handle_checkout(:checkout, _from, {host, opts, conn}, pool_state) do
@@ -290,16 +299,9 @@ defmodule Nexus.SSH.Pool do
     if connection_valid?(conn) do
       {:ok, conn, {host, opts, conn}, pool_state}
     else
-      # Connection invalid, create new one
+      # Connection became invalid, close and remove worker
       Connection.close(conn)
-
-      case Connection.connect(host, opts) do
-        {:ok, new_conn} ->
-          {:ok, new_conn, {host, opts, new_conn}, pool_state}
-
-        {:error, reason} ->
-          {:remove, reason, pool_state}
-      end
+      {:remove, :connection_invalid, pool_state}
     end
   end
 
@@ -314,9 +316,22 @@ defmodule Nexus.SSH.Pool do
   end
 
   @impl NimblePool
+  def handle_ping({_host, _opts, conn} = worker_state, _pool_state) do
+    # Called when worker is idle for worker_idle_timeout
+    # Close stale connections to free resources
+    if conn && connection_valid?(conn) do
+      {:ok, worker_state}
+    else
+      if conn, do: Connection.close(conn)
+      {:remove, :idle_timeout}
+    end
+  end
+
+  @impl NimblePool
   def handle_info({:DOWN, _, :process, _, _}, {host, opts, _conn}) do
-    # Connection process died, mark for removal
-    {:remove, {host, opts, nil}}
+    # Connection process died, mark as invalid for next checkout to detect
+    # NimblePool handle_info must return {:ok, worker_state}
+    {:ok, {host, opts, nil}}
   end
 
   def handle_info(_msg, worker_state) do
@@ -341,12 +356,31 @@ defmodule Nexus.SSH.Pool do
     "#{host.hostname}:#{host.port || 22}:#{host.user || "default"}"
   end
 
+  # Lock timeout for pool creation (5 seconds with 3 retries)
+  @lock_timeout 5_000
+  @lock_retries 3
+
   defp start_registered_pool(host, opts, pool_key) do
+    start_registered_pool(host, opts, pool_key, @lock_retries)
+  end
+
+  defp start_registered_pool(host, opts, pool_key, retries_left) do
     # Use a lock to prevent race conditions when multiple tasks
     # try to create a pool for the same host simultaneously
-    case :global.set_lock({__MODULE__, pool_key}, [node()], :infinity) do
-      true -> start_pool_with_lock(host, opts, pool_key)
-      false -> lookup_existing_pool(pool_key)
+    case :global.set_lock({__MODULE__, pool_key}, [node()], @lock_timeout) do
+      true ->
+        start_pool_with_lock(host, opts, pool_key)
+
+      false when retries_left > 0 ->
+        # Lock acquisition failed, check if pool exists now
+        case lookup_pool(pool_key) do
+          {:ok, pid} -> pid
+          :not_found -> start_registered_pool(host, opts, pool_key, retries_left - 1)
+        end
+
+      false ->
+        # Exhausted retries
+        {:error, :pool_lock_timeout}
     end
   end
 
@@ -360,13 +394,6 @@ defmodule Nexus.SSH.Pool do
 
     :global.del_lock({__MODULE__, pool_key}, [node()])
     result
-  end
-
-  defp lookup_existing_pool(pool_key) do
-    case lookup_pool(pool_key) do
-      {:ok, pid} -> pid
-      :not_found -> {:error, :pool_unavailable}
-    end
   end
 
   defp lookup_pool(pool_key) do
