@@ -253,21 +253,185 @@ defmodule Nexus.Executor.TaskRunner do
     execute_with_retry(cmd, executor, 1, :local)
   end
 
-  # Handle Resources.Types.Command by converting to standard Command format
+  # Handle Resources.Types.Command with idempotency guards
   defp execute_with_retry(%ResourceCommand{} = cmd, executor) do
-    # ResourceCommand doesn't have retries/retry_delay, so use defaults
-    standard_cmd = %Command{
-      cmd: cmd.cmd,
-      sudo: cmd.sudo,
-      user: cmd.user,
-      timeout: cmd.timeout,
+    start_time = System.monotonic_time(:millisecond)
+    Telemetry.emit_command_start(cmd.cmd, :local)
+
+    # Check idempotency guards first
+    case check_idempotency_guards(cmd, executor) do
+      {:skip, reason} ->
+        duration = System.monotonic_time(:millisecond) - start_time
+        Telemetry.emit_command_stop(cmd.cmd, duration, 0)
+
+        %{
+          cmd: cmd.cmd,
+          status: :ok,
+          output: "(skipped: #{reason})",
+          exit_code: 0,
+          attempts: 0,
+          duration_ms: duration,
+          skipped: true
+        }
+
+      :run ->
+        # Build the full command with env and cwd
+        full_cmd = build_resource_command(cmd)
+
+        # Create a temporary Command struct for execution
+        exec_cmd = %Command{
+          cmd: full_cmd,
+          sudo: cmd.sudo,
+          user: cmd.user,
+          timeout: cmd.timeout,
+          retries: 0,
+          retry_delay: 1_000,
+          when: cmd.when
+        }
+
+        result = executor.(exec_cmd)
+        duration = System.monotonic_time(:millisecond) - start_time
+
+        case result do
+          {:ok, output, 0} ->
+            Telemetry.emit_command_stop(cmd.cmd, duration, 0)
+
+            %{
+              cmd: cmd.cmd,
+              status: :ok,
+              output: output,
+              exit_code: 0,
+              attempts: 1,
+              duration_ms: duration
+            }
+
+          {:ok, output, exit_code} ->
+            Telemetry.emit_command_stop(cmd.cmd, duration, exit_code)
+
+            %{
+              cmd: cmd.cmd,
+              status: :error,
+              output: output,
+              exit_code: exit_code,
+              attempts: 1,
+              duration_ms: duration
+            }
+
+          {:error, reason} ->
+            Telemetry.emit_command_stop(cmd.cmd, duration, -1)
+
+            %{
+              cmd: cmd.cmd,
+              status: :error,
+              output: inspect(reason),
+              exit_code: -1,
+              attempts: 1,
+              duration_ms: duration
+            }
+        end
+    end
+  end
+
+  # Check idempotency guards for ResourceCommand
+  defp check_idempotency_guards(%ResourceCommand{} = cmd, executor) do
+    check_creates(cmd, executor)
+    |> check_removes(cmd, executor)
+    |> check_unless(cmd, executor)
+    |> check_onlyif(cmd, executor)
+  end
+
+  defp check_creates(%ResourceCommand{creates: nil}, _executor), do: :run
+
+  defp check_creates(%ResourceCommand{creates: path}, executor) do
+    if path_exists?(path, executor), do: {:skip, "creates path exists: #{path}"}, else: :run
+  end
+
+  defp check_removes({:skip, _} = skip, _cmd, _executor), do: skip
+  defp check_removes(:run, %ResourceCommand{removes: nil}, _executor), do: :run
+
+  defp check_removes(:run, %ResourceCommand{removes: path}, executor) do
+    if path_exists?(path, executor), do: :run, else: {:skip, "removes path absent: #{path}"}
+  end
+
+  defp check_unless({:skip, _} = skip, _cmd, _executor), do: skip
+  defp check_unless(:run, %ResourceCommand{unless: nil}, _executor), do: :run
+
+  defp check_unless(:run, %ResourceCommand{unless: check}, executor) do
+    if command_succeeds?(check, executor), do: {:skip, "unless command succeeded"}, else: :run
+  end
+
+  defp check_onlyif({:skip, _} = skip, _cmd, _executor), do: skip
+  defp check_onlyif(:run, %ResourceCommand{onlyif: nil}, _executor), do: :run
+
+  defp check_onlyif(:run, %ResourceCommand{onlyif: check}, executor) do
+    if command_succeeds?(check, executor), do: :run, else: {:skip, "onlyif command failed"}
+  end
+
+  defp path_exists?(path, executor) do
+    check_cmd = %Command{
+      cmd: "test -e #{shell_escape(path)}",
+      sudo: false,
+      user: nil,
+      timeout: 10_000,
       retries: 0,
       retry_delay: 1_000,
-      when: cmd.when
+      when: true
     }
 
-    execute_with_retry(standard_cmd, executor, 1, :local)
+    case executor.(check_cmd) do
+      {:ok, _, 0} -> true
+      _ -> false
+    end
   end
+
+  defp command_succeeds?(check_cmd_str, executor) do
+    check_cmd = %Command{
+      cmd: check_cmd_str,
+      sudo: false,
+      user: nil,
+      timeout: 30_000,
+      retries: 0,
+      retry_delay: 1_000,
+      when: true
+    }
+
+    case executor.(check_cmd) do
+      {:ok, _, 0} -> true
+      _ -> false
+    end
+  end
+
+  defp build_resource_command(%ResourceCommand{} = cmd) do
+    parts = []
+
+    # Environment variables
+    parts =
+      if cmd.env != %{} do
+        env_str =
+          Enum.map_join(cmd.env, " ", fn {k, v} ->
+            "#{k}=#{shell_escape(v)}"
+          end)
+
+        [env_str | parts]
+      else
+        parts
+      end
+
+    # Change directory
+    parts =
+      if cmd.cwd do
+        ["cd #{shell_escape(cmd.cwd)} &&" | parts]
+      else
+        parts
+      end
+
+    # The actual command
+    parts = parts ++ [cmd.cmd]
+
+    Enum.join(parts, " ")
+  end
+
+  defp shell_escape(str), do: "'" <> String.replace(to_string(str), "'", "'\\''") <> "'"
 
   defp execute_with_retry(%Command{} = cmd, executor, attempt, host) do
     # Only emit start event on first attempt
