@@ -7,12 +7,21 @@ defmodule Nexus.Property.TemplatePropertiesTest do
 
   @moduletag :property
 
+  # Elixir reserved words that cannot be used as variable names
+  @reserved_words ~w(
+    true false nil when and or not in fn do end catch rescue after else
+    case cond for if unless try receive raise throw import require alias
+    quote unquote super def defp defmodule defprotocol defimpl defrecord
+    defstruct defexception defmacro defmacrop defguard defguardp
+  )a
+
   # Helper to ensure variable names start with lowercase (valid Elixir identifiers)
   defp valid_var_name?(atom) do
     name = Atom.to_string(atom)
 
     String.match?(name, ~r/^[a-z][a-z0-9_]*$/i) and
-      String.downcase(String.first(name)) == String.first(name)
+      String.downcase(String.first(name)) == String.first(name) and
+      atom not in @reserved_words
   end
 
   describe "Template struct properties" do

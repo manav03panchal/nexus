@@ -24,6 +24,7 @@ defmodule Nexus.Executor.TaskRunner do
   """
 
   alias Nexus.Executor.Local
+  alias Nexus.Resources.Types.Command, as: ResourceCommand
   alias Nexus.SSH.{Connection, Pool}
   alias Nexus.Telemetry
   alias Nexus.Types.{Command, Host}
@@ -250,6 +251,22 @@ defmodule Nexus.Executor.TaskRunner do
 
   defp execute_with_retry(%Command{} = cmd, executor) do
     execute_with_retry(cmd, executor, 1, :local)
+  end
+
+  # Handle Resources.Types.Command by converting to standard Command format
+  defp execute_with_retry(%ResourceCommand{} = cmd, executor) do
+    # ResourceCommand doesn't have retries/retry_delay, so use defaults
+    standard_cmd = %Command{
+      cmd: cmd.cmd,
+      sudo: cmd.sudo,
+      user: cmd.user,
+      timeout: cmd.timeout,
+      retries: 0,
+      retry_delay: 1_000,
+      when: cmd.when
+    }
+
+    execute_with_retry(standard_cmd, executor, 1, :local)
   end
 
   defp execute_with_retry(%Command{} = cmd, executor, attempt, host) do
