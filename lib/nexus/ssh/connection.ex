@@ -24,6 +24,8 @@ defmodule Nexus.SSH.Connection do
 
   @behaviour Nexus.SSH.Behaviour
 
+  alias Nexus.SSH.ConfigParser
+  alias Nexus.SSH.Proxy
   alias Nexus.Types.Host
   alias SSHKit.SSH
 
@@ -80,15 +82,36 @@ defmodule Nexus.SSH.Connection do
   def connect(host, opts \\ [])
 
   def connect(%Host{} = host, opts) do
+    # Resolve password if configured
+    password = Host.resolve_password(host)
+
     merged_opts =
       opts
       |> maybe_put(:user, host.user)
       |> maybe_put(:port, host.port)
+      |> maybe_put(:identity, host.identity)
+      |> maybe_put(:password, password)
 
     connect(host.hostname, merged_opts)
   end
 
   def connect(hostname, opts) when is_binary(hostname) do
+    # Apply SSH config file settings (lower priority than explicit opts)
+    opts = apply_ssh_config(hostname, opts)
+
+    # Check if we need to use a proxy/jump host
+    case Keyword.pop(opts, :proxy_jump) do
+      {nil, opts} ->
+        # Direct connection
+        connect_direct(hostname, opts)
+
+      {jump_host, opts} ->
+        # Connect via jump host
+        Proxy.connect_via_jump(hostname, jump_host, target_opts: opts)
+    end
+  end
+
+  defp connect_direct(hostname, opts) do
     ssh_opts = build_ssh_opts(opts)
 
     case SSH.connect(hostname, ssh_opts) do
@@ -332,10 +355,15 @@ defmodule Nexus.SSH.Connection do
   defp maybe_add_identity(opts, nil), do: opts
 
   defp maybe_add_identity(opts, identity) do
-    # Set user_dir to the directory containing the key
-    # Erlang SSH will look for standard key names (id_rsa, id_ed25519, etc.)
     expanded = Path.expand(identity)
-    Keyword.put(opts, :user_dir, String.to_charlist(Path.dirname(expanded)))
+
+    if File.exists?(expanded) do
+      # Use the specific key file
+      Keyword.put(opts, :key_cb, {Nexus.SSH.KeyCallback, key_file: expanded})
+    else
+      # Fall back to user_dir if file doesn't exist (maybe it's a dir)
+      Keyword.put(opts, :user_dir, String.to_charlist(Path.dirname(expanded)))
+    end
   end
 
   defp maybe_add_password(opts, nil), do: opts
@@ -346,6 +374,31 @@ defmodule Nexus.SSH.Connection do
 
   defp maybe_put(opts, _key, nil), do: opts
   defp maybe_put(opts, key, value), do: Keyword.put_new(opts, key, value)
+
+  defp apply_ssh_config(hostname, opts) do
+    case ConfigParser.get_host_config(hostname) do
+      {:ok, config} when map_size(config) > 0 ->
+        # SSH config has lower priority - only fill in missing values
+        opts
+        |> maybe_put_from_config(:user, config[:user])
+        |> maybe_put_from_config(:port, config[:port])
+        |> maybe_put_from_config(:identity, config[:identity_file])
+        |> maybe_put_from_config(:proxy_jump, config[:proxy_jump])
+
+      _ ->
+        opts
+    end
+  end
+
+  defp maybe_put_from_config(opts, _key, nil), do: opts
+
+  defp maybe_put_from_config(opts, key, value) do
+    if Keyword.has_key?(opts, key) do
+      opts
+    else
+      Keyword.put(opts, key, value)
+    end
+  end
 
   defp current_user do
     System.get_env("USER") || System.get_env("USERNAME") || "root"

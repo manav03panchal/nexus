@@ -54,7 +54,7 @@ defmodule Nexus.Property.DSLParserTest do
       check all(task_name <- task_name_generator()) do
         dsl = """
         task :#{task_name} do
-          run "echo test"
+          command "echo test"
         end
         """
 
@@ -81,7 +81,7 @@ defmodule Nexus.Property.DSLParserTest do
           Enum.map_join(1..task_count, "\n", fn i ->
             """
             task :task#{i} do
-              run "echo task #{i}"
+              command "echo task #{i}"
             end
             """
           end)
@@ -95,7 +95,7 @@ defmodule Nexus.Property.DSLParserTest do
       check all(cmd_count <- integer(1..20)) do
         cmds =
           Enum.map_join(1..cmd_count, "\n", fn i ->
-            "  run \"command #{i}\""
+            "  command \"command #{i}\""
           end)
 
         dsl = """
@@ -151,7 +151,7 @@ defmodule Nexus.Property.DSLParserTest do
             Enum.map_join(1..task_count, "\n", fn i ->
               """
               task :task#{i} do
-                run "echo #{i}"
+                command "echo #{i}"
               end
               """
             end)

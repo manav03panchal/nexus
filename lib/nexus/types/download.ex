@@ -3,17 +3,21 @@ defmodule Nexus.Types.Download do
   Represents a file download command (remote -> local).
   """
 
+  @type condition :: term()
+
   @type t :: %__MODULE__{
           remote_path: String.t(),
           local_path: String.t(),
-          sudo: boolean()
+          sudo: boolean(),
+          when: condition()
         }
 
   @enforce_keys [:remote_path, :local_path]
   defstruct [
     :remote_path,
     :local_path,
-    sudo: false
+    sudo: false,
+    when: true
   ]
 
   @doc """
@@ -38,7 +42,8 @@ defmodule Nexus.Types.Download do
     %__MODULE__{
       remote_path: remote_path,
       local_path: local_path,
-      sudo: Keyword.get(opts, :sudo, false)
+      sudo: Keyword.get(opts, :sudo, false),
+      when: Keyword.get(opts, :when, true)
     }
   end
 end

@@ -113,6 +113,19 @@ defmodule Nexus.CLI do
               help: "Output format (text, json)",
               parser: &parse_format/1,
               default: :text
+            ],
+            tags: [
+              value_name: "TAGS",
+              short: "-t",
+              long: "--tags",
+              help: "Only run tasks with these tags (comma-separated)",
+              parser: :string
+            ],
+            skip_tags: [
+              value_name: "TAGS",
+              long: "--skip-tags",
+              help: "Skip tasks with these tags (comma-separated)",
+              parser: :string
             ]
           ],
           flags: [
@@ -120,6 +133,10 @@ defmodule Nexus.CLI do
               short: "-n",
               long: "--dry-run",
               help: "Show execution plan without running"
+            ],
+            check: [
+              long: "--check",
+              help: "Preview changes without executing (shows diffs for templates)"
             ],
             verbose: [
               short: "-v",
@@ -333,6 +350,10 @@ defmodule Nexus.CLI do
               ]
             ]
           ]
+        ],
+        version: [
+          name: "version",
+          about: "Show Nexus version information"
         ]
       ]
     )
@@ -431,6 +452,11 @@ defmodule Nexus.CLI do
 
   defp execute({:ok, [:secret, :delete], parsed}) do
     Secret.execute_delete(parsed)
+  end
+
+  defp execute({:ok, [:version], _parsed}) do
+    IO.puts("nexus #{@version}")
+    {:ok, 0}
   end
 
   defp print_subcommand_help(subcmd) do

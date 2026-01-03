@@ -12,11 +12,11 @@ defmodule Nexus.CLI.ListTest do
     test "lists tasks from configuration", %{tmp_dir: dir} do
       config_content = """
       task :build do
-        run "echo building"
+        command "echo building"
       end
 
       task :test, deps: [:build] do
-        run "echo testing"
+        command "echo testing"
       end
       """
 
@@ -45,7 +45,7 @@ defmodule Nexus.CLI.ListTest do
       host :web2, "deploy@web2.example.com:2222"
 
       task :deploy, on: :web1 do
-        run "echo deploying"
+        command "echo deploying"
       end
       """
 
@@ -77,7 +77,7 @@ defmodule Nexus.CLI.ListTest do
       group :web, [:web1, :web2]
 
       task :deploy, on: :web do
-        run "echo deploying"
+        command "echo deploying"
       end
       """
 
@@ -105,7 +105,7 @@ defmodule Nexus.CLI.ListTest do
       host :web1, "web1.example.com"
 
       task :build do
-        run "echo building"
+        command "echo building"
       end
       """
 
@@ -169,9 +169,9 @@ defmodule Nexus.CLI.ListTest do
     test "shows command count for tasks", %{tmp_dir: dir} do
       config_content = """
       task :build do
-        run "echo step 1"
-        run "echo step 2"
-        run "echo step 3"
+        command "echo step 1"
+        command "echo step 2"
+        command "echo step 3"
       end
       """
 
@@ -196,11 +196,11 @@ defmodule Nexus.CLI.ListTest do
       host :prod, "prod.example.com"
 
       task :local_task do
-        run "echo local"
+        command "echo local"
       end
 
       task :remote_task, on: :prod do
-        run "echo remote"
+        command "echo remote"
       end
       """
 

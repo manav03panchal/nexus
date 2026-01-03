@@ -12,11 +12,11 @@ defmodule Nexus.CLI.ValidateTest do
     test "validates a correct configuration", %{tmp_dir: dir} do
       config_content = """
       task :build do
-        run "echo building"
+        command "echo building"
       end
 
       task :test, deps: [:build] do
-        run "echo testing"
+        command "echo testing"
       end
       """
 
@@ -80,11 +80,11 @@ defmodule Nexus.CLI.ValidateTest do
     test "reports circular dependencies", %{tmp_dir: dir} do
       config_content = """
       task :a, deps: [:b] do
-        run "echo a"
+        command "echo a"
       end
 
       task :b, deps: [:a] do
-        run "echo b"
+        command "echo b"
       end
       """
 
@@ -107,7 +107,7 @@ defmodule Nexus.CLI.ValidateTest do
     test "reports unknown host references", %{tmp_dir: dir} do
       config_content = """
       task :deploy, on: :unknown_host do
-        run "echo deploying"
+        command "echo deploying"
       end
       """
 
@@ -130,7 +130,7 @@ defmodule Nexus.CLI.ValidateTest do
     test "reports unknown dependency references", %{tmp_dir: dir} do
       config_content = """
       task :deploy, deps: [:nonexistent] do
-        run "echo deploying"
+        command "echo deploying"
       end
       """
 
@@ -158,7 +158,7 @@ defmodule Nexus.CLI.ValidateTest do
       group :web, [:web1, :web2]
 
       task :deploy, on: :web do
-        run "echo deploying"
+        command "echo deploying"
       end
       """
 

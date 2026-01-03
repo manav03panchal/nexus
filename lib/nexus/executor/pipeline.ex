@@ -21,6 +21,7 @@ defmodule Nexus.Executor.Pipeline do
 
   alias Nexus.DAG
   alias Nexus.Executor.TaskRunner
+  alias Nexus.Facts.Cache
   alias Nexus.Types.Config
   alias Nexus.Types.Task, as: NexusTask
 
@@ -68,8 +69,16 @@ defmodule Nexus.Executor.Pipeline do
   """
   @spec run(Config.t(), [atom()], run_opts()) :: {:ok, pipeline_result()} | {:error, term()}
   def run(%Config{} = config, target_tasks, opts \\ []) do
-    with {:ok, plan} <- build_execution_plan(config, target_tasks) do
-      execute_plan(config, plan, opts)
+    # Initialize the facts cache for this pipeline run
+    Cache.init()
+
+    try do
+      with {:ok, plan} <- build_execution_plan(config, target_tasks) do
+        execute_plan(config, plan, opts)
+      end
+    after
+      # Clean up the facts cache
+      Cache.clear()
     end
   end
 

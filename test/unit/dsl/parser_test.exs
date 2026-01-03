@@ -57,8 +57,8 @@ defmodule Nexus.DSL.ParserTest do
     test "parses simple task" do
       dsl = """
       task :build do
-        run "mix deps.get"
-        run "mix compile"
+        command "mix deps.get"
+        command "mix compile"
       end
       """
 
@@ -76,11 +76,11 @@ defmodule Nexus.DSL.ParserTest do
     test "parses task with dependencies" do
       dsl = """
       task :build do
-        run "mix compile"
+        command "mix compile"
       end
 
       task :test, deps: [:build] do
-        run "mix test"
+        command "mix test"
       end
       """
 
@@ -94,7 +94,7 @@ defmodule Nexus.DSL.ParserTest do
       group :web, [:web1]
 
       task :deploy, on: :web do
-        run "git pull"
+        command "git pull"
       end
       """
 
@@ -107,7 +107,7 @@ defmodule Nexus.DSL.ParserTest do
       host :web1, "example.com"
 
       task :restart, on: :web1, strategy: :serial do
-        run "systemctl restart app"
+        command "systemctl restart app"
       end
       """
 
@@ -115,11 +115,11 @@ defmodule Nexus.DSL.ParserTest do
       assert config.tasks[:restart].strategy == :serial
     end
 
-    test "parses run with options" do
+    test "parses command with options" do
       dsl = """
       task :deploy do
-        run "apt update", sudo: true
-        run "deploy.sh", timeout: 120_000, retries: 3
+        command "apt update", sudo: true
+        command "deploy.sh", timeout: 120_000, creates: "/opt/app/deployed"
       end
       """
 
@@ -128,7 +128,7 @@ defmodule Nexus.DSL.ParserTest do
 
       assert Enum.at(commands, 0).sudo == true
       assert Enum.at(commands, 1).timeout == 120_000
-      assert Enum.at(commands, 1).retries == 3
+      assert Enum.at(commands, 1).creates == "/opt/app/deployed"
     end
 
     test "applies default_user to hosts without user" do
@@ -193,13 +193,13 @@ defmodule Nexus.DSL.ParserTest do
       assert message =~ "unknown config option"
     end
 
-    test "returns error for run outside task or handler block" do
+    test "returns error for command outside task block" do
       dsl = """
-      run "echo hello"
+      command "echo hello"
       """
 
       assert {:error, message} = Parser.parse_string(dsl)
-      assert message =~ "run must be called inside a task or handler block"
+      assert message =~ "command must be called inside a task block"
     end
   end
 
@@ -216,7 +216,7 @@ defmodule Nexus.DSL.ParserTest do
       host :web1, "example.com"
 
       task :build do
-        run "mix compile"
+        command "mix compile"
       end
       """
 
@@ -299,25 +299,25 @@ defmodule Nexus.DSL.ParserTest do
       group :all, [:web1, :web2, :db]
 
       task :build do
-        run "mix deps.get"
-        run "mix compile"
+        command "mix deps.get"
+        command "mix compile"
       end
 
       task :test, deps: [:build] do
-        run "mix test"
+        command "mix test"
       end
 
       task :deploy, deps: [:test], on: :web do
-        run "git pull"
-        run "mix deps.get --only prod"
-        run "MIX_ENV=prod mix compile"
-        run "sudo systemctl restart app", sudo: true
+        command "git pull"
+        command "mix deps.get --only prod"
+        command "MIX_ENV=prod mix compile"
+        command "sudo systemctl restart app", sudo: true
       end
 
       task :rolling_restart, on: :web, strategy: :serial do
-        run "sudo systemctl restart app", sudo: true
-        run "sleep 10"
-        run "curl -f http://localhost:4000/health", retries: 3, retry_delay: 5_000
+        command "sudo systemctl restart app", sudo: true
+        command "sleep 10"
+        command "curl -f http://localhost:4000/health", retries: 3, retry_delay: 5_000
       end
       """
 

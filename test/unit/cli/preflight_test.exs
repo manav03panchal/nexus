@@ -21,11 +21,11 @@ defmodule Nexus.CLI.PreflightTest do
     test "returns success for valid local-only config", %{config_path: config_path} do
       config_content = """
       task :build, on: :local do
-        run "echo build"
+        command "echo build"
       end
 
       task :test, on: :local, deps: [:build] do
-        run "echo test"
+        command "echo test"
       end
       """
 
@@ -66,7 +66,7 @@ defmodule Nexus.CLI.PreflightTest do
     test "outputs JSON format when requested", %{config_path: config_path} do
       config_content = """
       task :build, on: :local do
-        run "echo build"
+        command "echo build"
       end
       """
 
@@ -96,7 +96,7 @@ defmodule Nexus.CLI.PreflightTest do
       host :server1, "user@nonexistent.host.local"
 
       task :deploy, on: :server1 do
-        run "echo deploy"
+        command "echo deploy"
       end
       """
 
@@ -120,11 +120,11 @@ defmodule Nexus.CLI.PreflightTest do
     test "parses task names from args", %{config_path: config_path} do
       config_content = """
       task :build, on: :local do
-        run "echo build"
+        command "echo build"
       end
 
       task :test, on: :local do
-        run "echo test"
+        command "echo test"
       end
       """
 
@@ -148,11 +148,11 @@ defmodule Nexus.CLI.PreflightTest do
     test "shows execution plan for valid config", %{config_path: config_path} do
       config_content = """
       task :build, on: :local do
-        run "echo build"
+        command "echo build"
       end
 
       task :test, on: :local, deps: [:build] do
-        run "echo test"
+        command "echo test"
       end
       """
 
@@ -176,7 +176,7 @@ defmodule Nexus.CLI.PreflightTest do
     test "verbose mode shows details", %{config_path: config_path} do
       config_content = """
       task :build, on: :local do
-        run "echo build"
+        command "echo build"
       end
       """
 
@@ -200,7 +200,7 @@ defmodule Nexus.CLI.PreflightTest do
     test "reports unknown tasks", %{config_path: config_path} do
       config_content = """
       task :build, on: :local do
-        run "echo build"
+        command "echo build"
       end
       """
 
@@ -255,7 +255,7 @@ defmodule Nexus.CLI.PreflightTest do
     test "handles nil skip option", %{config_path: config_path} do
       config_content = """
       task :build, on: :local do
-        run "echo build"
+        command "echo build"
       end
       """
 
@@ -277,7 +277,7 @@ defmodule Nexus.CLI.PreflightTest do
       config_content = """
       host :server1, "user@nonexistent.local"
       task :deploy, on: :server1 do
-        run "echo deploy"
+        command "echo deploy"
       end
       """
 

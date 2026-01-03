@@ -224,9 +224,16 @@ defmodule Nexus.Template.RendererEdgeCasesTest do
   describe "error handling edge cases" do
     test "handles undefined variable gracefully" do
       template = "Value: <%= @undefined_var %>"
-      result = Renderer.render_string(template, %{})
+
+      # Capture the expected warning about missing assign
+      _captured =
+        ExUnit.CaptureIO.capture_io(:stderr, fn ->
+          send(self(), Renderer.render_string(template, %{}))
+        end)
+
+      assert_receive response
       # Should return error or warning, not crash
-      assert match?({:ok, _}, result) or match?({:error, _}, result)
+      assert match?({:ok, _}, response) or match?({:error, _}, response)
     end
 
     test "handles syntax error in template" do

@@ -5,13 +5,16 @@ defmodule Nexus.Types.Template do
   Templates are rendered locally using EEx, then uploaded to the remote host.
   """
 
+  @type condition :: term()
+
   @type t :: %__MODULE__{
           source: String.t(),
           destination: String.t(),
           vars: map(),
           sudo: boolean(),
           mode: non_neg_integer() | nil,
-          notify: atom() | nil
+          notify: atom() | nil,
+          when: condition()
         }
 
   @enforce_keys [:source, :destination]
@@ -21,7 +24,8 @@ defmodule Nexus.Types.Template do
     :mode,
     :notify,
     vars: %{},
-    sudo: false
+    sudo: false,
+    when: true
   ]
 
   @doc """
@@ -62,7 +66,8 @@ defmodule Nexus.Types.Template do
       vars: Keyword.get(opts, :vars, %{}),
       sudo: Keyword.get(opts, :sudo, false),
       mode: Keyword.get(opts, :mode),
-      notify: Keyword.get(opts, :notify)
+      notify: Keyword.get(opts, :notify),
+      when: Keyword.get(opts, :when, true)
     }
   end
 end

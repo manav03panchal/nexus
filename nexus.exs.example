@@ -57,20 +57,20 @@ config :nexus,
 # -----------------------------------------------------------------------------
 
 task :deps, on: :local do
-  run "mix deps.get"
-  run "mix deps.compile"
+  command "mix deps.get"
+  command "mix deps.compile"
 end
 
 task :compile, on: :local, deps: [:deps] do
-  run "mix compile --warnings-as-errors"
+  command "mix compile --warnings-as-errors"
 end
 
 task :test, on: :local, deps: [:compile] do
-  run "mix test"
+  command "mix test"
 end
 
 task :build, on: :local, deps: [:test] do
-  run "MIX_ENV=prod mix release --overwrite"
+  command "MIX_ENV=prod mix release --overwrite"
 end
 
 # -----------------------------------------------------------------------------
@@ -79,30 +79,30 @@ end
 
 task :upload, on: :web, deps: [:build] do
   # Upload the release tarball to each web server
-  run "scp _build/prod/rel/myapp/myapp-*.tar.gz deploy@{host}:/opt/myapp/releases/"
+  upload "_build/prod/rel/myapp/myapp-*.tar.gz", "/opt/myapp/releases/"
 end
 
 task :backup, on: :web do
   # Create backup of current version before deploying
-  run "cp -r /opt/myapp/current /opt/myapp/backup-$(date +%Y%m%d-%H%M%S)"
+  command "cp -r /opt/myapp/current /opt/myapp/backup-$(date +%Y%m%d-%H%M%S)"
 end
 
 task :deploy, on: :web, deps: [:upload, :backup] do
   # Extract and link new release
-  run "cd /opt/myapp/releases && tar -xzf myapp-*.tar.gz"
-  run "ln -sfn /opt/myapp/releases/myapp /opt/myapp/current"
+  command "cd /opt/myapp/releases && tar -xzf myapp-*.tar.gz"
+  command "ln -sfn /opt/myapp/releases/myapp /opt/myapp/current"
 
   # Restart the application
-  run "systemctl restart myapp", sudo: true
+  service "myapp", action: :restart
 
   # Wait for health check
-  run "sleep 5 && curl -f http://localhost:4000/health"
+  wait_for :http, "http://localhost:4000/health", timeout: 30_000
 end
 
 task :rollback, on: :web do
   # Quick rollback to previous version
-  run "cd /opt/myapp && rm current && mv backup-* current"
-  run "systemctl restart myapp", sudo: true
+  command "cd /opt/myapp && rm current && mv backup-* current"
+  service "myapp", action: :restart
 end
 
 # -----------------------------------------------------------------------------
@@ -110,11 +110,11 @@ end
 # -----------------------------------------------------------------------------
 
 task :migrate, on: :db_primary, deps: [:deploy] do
-  run "/opt/myapp/current/bin/myapp eval 'MyApp.Release.migrate()'"
+  command "/opt/myapp/current/bin/myapp eval 'MyApp.Release.migrate()'"
 end
 
 task :db_backup, on: :db_primary do
-  run "pg_dump myapp_prod > /backups/myapp-$(date +%Y%m%d).sql"
+  command "pg_dump myapp_prod > /backups/myapp-$(date +%Y%m%d).sql"
 end
 
 # -----------------------------------------------------------------------------
@@ -122,19 +122,19 @@ end
 # -----------------------------------------------------------------------------
 
 task :status, on: :production do
-  run "systemctl status myapp"
+  command "systemctl status myapp"
 end
 
 task :logs, on: :web do
-  run "journalctl -u myapp -n 100 --no-pager"
+  command "journalctl -u myapp -n 100 --no-pager"
 end
 
 task :disk_check, on: :production do
-  run "df -h"
+  command "df -h"
 end
 
 task :restart, on: :web do
-  run "systemctl restart myapp", sudo: true
+  service "myapp", action: :restart
 end
 
 # -----------------------------------------------------------------------------
@@ -150,9 +150,9 @@ end
 # -----------------------------------------------------------------------------
 
 task :staging_deploy, on: :staging, deps: [:build] do
-  run "scp _build/prod/rel/myapp/myapp-*.tar.gz deploy@staging:/opt/myapp/"
-  run "cd /opt/myapp && tar -xzf myapp-*.tar.gz"
-  run "systemctl restart myapp", sudo: true
+  upload "_build/prod/rel/myapp/myapp-*.tar.gz", "/opt/myapp/"
+  command "cd /opt/myapp && tar -xzf myapp-*.tar.gz"
+  service "myapp", action: :restart
 end
 
 # =============================================================================

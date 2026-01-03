@@ -5,8 +5,12 @@ defmodule Nexus.CLI.Run do
   Executes one or more tasks with their dependencies.
   """
 
+  alias Nexus.Check.Reporter, as: CheckReporter
   alias Nexus.DSL.Parser
   alias Nexus.Executor.Pipeline
+  alias Nexus.Notifications.Sender, as: NotificationSender
+  alias Nexus.Types.Config
+  alias Nexus.Types.Task
 
   @doc """
   Executes the run command with parsed arguments.
@@ -17,11 +21,17 @@ defmodule Nexus.CLI.Run do
     opts = build_opts(parsed)
 
     with {:ok, config} <- load_config(config_path),
+         {:ok, config} <- apply_tag_filters(config, opts),
          :ok <- validate_tasks(config, tasks) do
-      if opts[:dry_run] do
-        execute_dry_run(config, tasks, opts)
-      else
-        execute_pipeline(config, tasks, opts)
+      cond do
+        opts[:dry_run] ->
+          execute_dry_run(config, tasks, opts)
+
+        opts[:check] ->
+          execute_check_mode(config, tasks, opts)
+
+        true ->
+          execute_pipeline(config, tasks, opts)
       end
     else
       {:error, reason} ->
@@ -41,14 +51,63 @@ defmodule Nexus.CLI.Run do
 
     [
       dry_run: parsed.flags[:dry_run] || false,
+      check: parsed.flags[:check] || false,
       verbose: parsed.flags[:verbose] || false,
       quiet: parsed.flags[:quiet] || false,
       continue_on_error: parsed.flags[:continue_on_error] || false,
       parallel_limit: parsed.options[:parallel_limit] || 10,
       format: parsed.options[:format] || :text,
       plain: parsed.flags[:plain] || false,
-      ssh_opts: ssh_opts
+      ssh_opts: ssh_opts,
+      tags: parse_tag_list(parsed.options[:tags]),
+      skip_tags: parse_tag_list(parsed.options[:skip_tags])
     ]
+  end
+
+  defp parse_tag_list(nil), do: []
+
+  defp parse_tag_list(tags_string) do
+    tags_string
+    |> String.split(~r/[\s,]+/, trim: true)
+    |> Enum.map(&String.to_atom/1)
+  end
+
+  defp apply_tag_filters(config, opts) do
+    tags = opts[:tags] || []
+    skip_tags = opts[:skip_tags] || []
+
+    if Enum.empty?(tags) and Enum.empty?(skip_tags) do
+      {:ok, config}
+    else
+      filtered_tasks =
+        config.tasks
+        |> Enum.filter(fn {_name, task} ->
+          passes_tag_filter?(task, tags, skip_tags)
+        end)
+        |> Map.new()
+
+      {:ok, %{config | tasks: filtered_tasks}}
+    end
+  end
+
+  defp passes_tag_filter?(task, include_tags, exclude_tags) do
+    # If include_tags specified, task must have at least one of them
+    include_ok =
+      if Enum.empty?(include_tags) do
+        true
+      else
+        Task.has_tag?(task, include_tags)
+      end
+
+    # If exclude_tags specified, task must NOT have any of them
+    exclude_ok =
+      if Enum.empty?(exclude_tags) do
+        true
+      else
+        not Task.has_tag?(task, exclude_tags)
+      end
+
+    include_ok and exclude_ok
   end
 
   defp build_ssh_opts(options) do
@@ -113,6 +172,57 @@ defmodule Nexus.CLI.Run do
     end
   end
 
+  defp execute_check_mode(config, tasks, opts) do
+    case Pipeline.dry_run(config, tasks) do
+      {:ok, plan} ->
+        print_check_mode(config, plan, opts)
+        {:ok, 0}
+
+      {:error, reason} ->
+        print_error(reason, opts)
+        {:error, 1}
+    end
+  end
+
+  defp print_check_mode(config, plan, _opts) do
+    CheckReporter.print_header()
+
+    {total_changes, total_hosts} =
+      Enum.reduce(plan.phases, {0, 0}, fn phase, acc ->
+        Enum.reduce(phase, acc, fn task_name, {ch, h} ->
+          process_task_for_check(config, plan, task_name, {ch, h})
+        end)
+      end)
+
+    CheckReporter.print_summary(plan.total_tasks, total_hosts, total_changes)
+  end
+
+  defp process_task_for_check(config, plan, task_name, {ch, h}) do
+    task = Map.get(plan.task_details, task_name)
+
+    case Config.resolve_hosts(config, task.on) do
+      {:ok, task_hosts} ->
+        host_names = get_host_names(task_hosts)
+        results = generate_check_results(task.commands, host_names)
+        CheckReporter.print_task_check(task_name, host_names, results)
+        {ch + length(results), h + length(host_names)}
+
+      {:error, _} ->
+        {ch, h}
+    end
+  end
+
+  defp get_host_names([]), do: ["local"]
+  defp get_host_names(task_hosts), do: Enum.map(task_hosts, & &1.hostname)
+
+  defp generate_check_results(commands, host_names) do
+    Enum.flat_map(commands, fn cmd ->
+      Enum.map(host_names, fn host ->
+        CheckReporter.check_command(cmd, host, %{})
+      end)
+    end)
+  end
+
   defp execute_pipeline(config, tasks, opts) do
     pipeline_opts = [
       continue_on_error: opts[:continue_on_error],
@@ -120,9 +230,12 @@ defmodule Nexus.CLI.Run do
       ssh_opts: opts[:ssh_opts]
     ]
 
+    started_at = DateTime.utc_now()
+
     case Pipeline.run(config, tasks, pipeline_opts) do
       {:ok, result} ->
         print_result(result, opts)
+        send_notifications(config, result, started_at, opts)
 
         if result.status == :ok do
           {:ok, 0}
@@ -134,6 +247,46 @@ defmodule Nexus.CLI.Run do
         print_error(reason, opts)
         {:error, 1}
     end
+  end
+
+  defp send_notifications(config, result, started_at, opts) do
+    if Enum.empty?(config.notifications) do
+      :ok
+    else
+      finished_at = DateTime.utc_now()
+
+      notification_result = %{
+        status: if(result.status == :ok, do: :success, else: :failure),
+        duration_ms: result.duration_ms,
+        started_at: started_at,
+        finished_at: finished_at,
+        tasks: build_task_results(result.task_results)
+      }
+
+      unless opts[:quiet] do
+        IO.puts("Sending #{length(config.notifications)} notification(s)...")
+      end
+
+      NotificationSender.send_all(config.notifications, notification_result)
+    end
+  end
+
+  defp build_task_results(task_results) do
+    Enum.map(task_results, fn task_result ->
+      %{
+        name: task_result.task,
+        status: if(task_result.status == :ok, do: :success, else: :failure),
+        hosts:
+          Enum.map(task_result.host_results, fn host_result ->
+            %{
+              host: host_result.host,
+              status: if(host_result.status == :ok, do: :success, else: :failure),
+              output: nil,
+              error: if(host_result.status != :ok, do: "Task failed", else: nil)
+            }
+          end)
+      }
+    end)
   end
 
   defp print_dry_run(plan, opts) do
@@ -293,15 +446,15 @@ defmodule Nexus.CLI.Run do
   end
 
   defp format_error({:file_not_found, path}) do
-    "Config file not found: #{path}"
+    "Config file not found: #{path}\n  Hint: Ensure the file exists or specify a different path with -c"
   end
 
   defp format_error({:unknown_tasks, tasks}) do
-    "Unknown tasks: #{Enum.map_join(tasks, ", ", &Atom.to_string/1)}"
+    "Unknown tasks: #{Enum.map_join(tasks, ", ", &Atom.to_string/1)}\n  Hint: Use 'nexus list' to see available tasks"
   end
 
   defp format_error({:cycle, path}) do
-    "Circular dependency detected: #{Enum.map_join(path, " -> ", &Atom.to_string/1)}"
+    "Circular dependency detected: #{Enum.map_join(path, " -> ", &Atom.to_string/1)}\n  Hint: Review task dependencies to break the cycle"
   end
 
   defp format_error(reason) when is_binary(reason) do

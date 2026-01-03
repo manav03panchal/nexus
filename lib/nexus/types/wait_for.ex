@@ -7,6 +7,7 @@ defmodule Nexus.Types.WaitFor do
   """
 
   @type check_type :: :http | :tcp | :command
+  @type condition :: term()
 
   @type t :: %__MODULE__{
           type: check_type(),
@@ -14,7 +15,8 @@ defmodule Nexus.Types.WaitFor do
           timeout: pos_integer(),
           interval: pos_integer(),
           expected_status: pos_integer() | nil,
-          expected_body: String.t() | Regex.t() | nil
+          expected_body: String.t() | Regex.t() | nil,
+          when: condition()
         }
 
   @enforce_keys [:type, :target]
@@ -24,7 +26,8 @@ defmodule Nexus.Types.WaitFor do
     :expected_status,
     :expected_body,
     timeout: 60_000,
-    interval: 5_000
+    interval: 5_000,
+    when: true
   ]
 
   @doc """
@@ -64,7 +67,8 @@ defmodule Nexus.Types.WaitFor do
       timeout: Keyword.get(opts, :timeout, 60_000),
       interval: Keyword.get(opts, :interval, 5_000),
       expected_status: Keyword.get(opts, :expected_status),
-      expected_body: Keyword.get(opts, :expected_body)
+      expected_body: Keyword.get(opts, :expected_body),
+      when: Keyword.get(opts, :when, true)
     }
   end
 end

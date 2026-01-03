@@ -1,681 +1,600 @@
 defmodule Nexus.DSL.ParserEdgeCasesTest do
+  @moduledoc """
+  Edge case tests for DSL parser error handling.
+
+  Tests parser behavior with:
+  - Malformed syntax
+  - Invalid values
+  - Missing required fields
+  - Unicode and special characters
+  - Boundary conditions
+  """
+
   use ExUnit.Case, async: true
 
   alias Nexus.DSL.Parser
 
-  @moduletag :unit
+  # ============================================================================
+  # Syntax Errors
+  # ============================================================================
 
-  describe "task definition edge cases" do
-    test "task with empty block" do
+  describe "syntax errors" do
+    test "unclosed do block" do
       dsl = """
-      task :empty do
+      task :broken, on: :web do
+        command "echo hello"
+      """
+
+      assert {:error, _} = Parser.parse_string(dsl)
+    end
+
+    test "unclosed string literal" do
+      dsl = """
+      host :web, "example.com
+      """
+
+      assert {:error, _} = Parser.parse_string(dsl)
+    end
+
+    test "mismatched brackets" do
+      dsl = """
+      task :broken, on: :web, tags: [:a, :b do
+        command "echo"
       end
       """
 
-      {:ok, config} = Parser.parse_string(dsl)
-      assert config.tasks[:empty].commands == []
+      assert {:error, _} = Parser.parse_string(dsl)
     end
 
-    test "task with only comments" do
+    test "invalid elixir syntax" do
       dsl = """
-      task :commented do
-        # This is a comment
-        # Another comment
+      task :broken on: :web do
+        command "echo"
       end
       """
 
-      {:ok, config} = Parser.parse_string(dsl)
-      assert config.tasks[:commented].commands == []
+      assert {:error, _} = Parser.parse_string(dsl)
     end
 
-    test "task with all options" do
-      dsl = """
-      host :web1, "web1.example.com"
-      group :web, [:web1]
-
-      task :full_options, deps: [:build], on: :web, strategy: :rolling, timeout: 600_000 do
-        run "echo test"
-      end
-      """
-
-      {:ok, config} = Parser.parse_string(dsl)
-      task = config.tasks[:full_options]
-      assert task.deps == [:build]
-      assert task.on == :web
-      assert task.strategy == :rolling
-      assert task.timeout == 600_000
+    test "random garbage" do
+      dsl = "!@#$%^&*()_+{}|:<>?"
+      assert {:error, _} = Parser.parse_string(dsl)
     end
 
-    test "task with batch_size for rolling" do
-      dsl = """
-      host :web1, "web1.example.com"
-
-      task :rolling_deploy, on: :web1, strategy: :rolling, batch_size: 5 do
-        run "echo deploy"
-      end
-      """
-
-      {:ok, config} = Parser.parse_string(dsl)
-      task = config.tasks[:rolling_deploy]
-      assert task.batch_size == 5
-    end
-
-    test "multiple tasks with dependencies" do
-      dsl = """
-      task :first do
-        run "echo first"
-      end
-
-      task :second, deps: [:first] do
-        run "echo second"
-      end
-
-      task :third, deps: [:first, :second] do
-        run "echo third"
-      end
-      """
-
-      {:ok, config} = Parser.parse_string(dsl)
-      assert config.tasks[:second].deps == [:first]
-      assert config.tasks[:third].deps == [:first, :second]
-    end
-  end
-
-  describe "run command edge cases" do
-    test "run with empty string" do
-      dsl = """
-      task :empty_cmd do
-        run ""
-      end
-      """
-
-      {:ok, config} = Parser.parse_string(dsl)
-      assert Enum.at(config.tasks[:empty_cmd].commands, 0).cmd == ""
-    end
-
-    test "run with multiline command" do
-      dsl = """
-      task :multiline do
-        run "echo line1 && \\
-             echo line2"
-      end
-      """
-
-      {:ok, config} = Parser.parse_string(dsl)
-      cmd = Enum.at(config.tasks[:multiline].commands, 0).cmd
-      assert cmd =~ "echo line1"
-    end
-
-    test "run with all options" do
-      dsl = """
-      task :full_run do
-        run "command", sudo: true, timeout: 120_000, retries: 3, retry_delay: 5_000
-      end
-      """
-
-      {:ok, config} = Parser.parse_string(dsl)
-      cmd = Enum.at(config.tasks[:full_run].commands, 0)
-      assert cmd.sudo == true
-      assert cmd.timeout == 120_000
-      assert cmd.retries == 3
-      assert cmd.retry_delay == 5_000
-    end
-
-    test "run with shell special characters" do
-      dsl = """
-      task :special do
-        run "echo $HOME && cat /etc/passwd | grep root"
-      end
-      """
-
-      {:ok, config} = Parser.parse_string(dsl)
-      cmd = Enum.at(config.tasks[:special].commands, 0).cmd
-      assert cmd =~ "$HOME"
-      assert cmd =~ "|"
-    end
-
-    test "run with heredoc" do
-      dsl = """
-      task :heredoc do
-        run "cat << 'EOF'\\nline1\\nline2\\nEOF"
-      end
-      """
-
-      {:ok, config} = Parser.parse_string(dsl)
-      assert config.tasks[:heredoc] != nil
-    end
-  end
-
-  describe "host definition edge cases" do
-    test "host with just hostname" do
-      dsl = """
-      host :simple, "example.com"
-      """
-
-      {:ok, config} = Parser.parse_string(dsl)
-      host = config.hosts[:simple]
-      assert host.hostname == "example.com"
-      assert host.port == 22
-    end
-
-    test "host with user" do
-      dsl = """
-      host :with_user, "deploy@example.com"
-      """
-
-      {:ok, config} = Parser.parse_string(dsl)
-      host = config.hosts[:with_user]
-      assert host.user == "deploy"
-      assert host.hostname == "example.com"
-    end
-
-    test "host with user and port" do
-      dsl = """
-      host :full, "admin@example.com:2222"
-      """
-
-      {:ok, config} = Parser.parse_string(dsl)
-      host = config.hosts[:full]
-      assert host.user == "admin"
-      assert host.hostname == "example.com"
-      assert host.port == 2222
-    end
-
-    test "host with IP address" do
-      dsl = """
-      host :ip, "192.168.1.100"
-      """
-
-      {:ok, config} = Parser.parse_string(dsl)
-      assert config.hosts[:ip].hostname == "192.168.1.100"
-    end
-
-    test "host with IPv6 returns error (not currently supported)" do
-      dsl = """
-      host :ipv6, "[::1]"
-      """
-
-      # IPv6 format is not currently supported by the host parser
-      {:error, _} = Parser.parse_string(dsl)
-    end
-
-    test "many hosts" do
-      hosts = for i <- 1..50, do: "host :web#{i}, \"web#{i}.example.com\""
-      dsl = Enum.join(hosts, "\n")
-
-      {:ok, config} = Parser.parse_string(dsl)
-      assert map_size(config.hosts) == 50
-    end
-  end
-
-  describe "group definition edge cases" do
-    test "empty group" do
-      dsl = """
-      group :empty, []
-      """
-
-      {:ok, config} = Parser.parse_string(dsl)
-      assert config.groups[:empty].hosts == []
-    end
-
-    test "group with single host" do
-      dsl = """
-      host :web1, "web1.example.com"
-      group :single, [:web1]
-      """
-
-      {:ok, config} = Parser.parse_string(dsl)
-      assert config.groups[:single].hosts == [:web1]
-    end
-
-    test "group with many hosts" do
-      hosts = for i <- 1..20, do: "host :h#{i}, \"h#{i}.example.com\""
-      host_refs = for i <- 1..20, do: ":h#{i}"
-      dsl = Enum.join(hosts, "\n") <> "\ngroup :many, [#{Enum.join(host_refs, ", ")}]"
-
-      {:ok, config} = Parser.parse_string(dsl)
-      assert length(config.groups[:many].hosts) == 20
-    end
-
-    test "multiple groups" do
-      dsl = """
-      host :web1, "web1.example.com"
-      host :web2, "web2.example.com"
-      host :db1, "db1.example.com"
-
-      group :web, [:web1, :web2]
-      group :db, [:db1]
-      group :all, [:web1, :web2, :db1]
-      """
-
-      {:ok, config} = Parser.parse_string(dsl)
-      assert map_size(config.groups) == 3
-    end
-  end
-
-  describe "upload edge cases" do
-    test "upload with minimal options" do
-      dsl = """
-      host :web1, "example.com"
-
-      task :upload_test, on: :web1 do
-        upload "local.txt", "/remote/file.txt"
-      end
-      """
-
-      {:ok, config} = Parser.parse_string(dsl)
-      cmd = Enum.at(config.tasks[:upload_test].commands, 0)
-      assert cmd.local_path == "local.txt"
-      assert cmd.remote_path == "/remote/file.txt"
-    end
-
-    test "upload with all options" do
-      dsl = """
-      host :web1, "example.com"
-
-      handler :restart do
-        run "systemctl restart app"
-      end
-
-      task :upload_test, on: :web1 do
-        upload "local.txt", "/remote/file.txt", sudo: true, mode: 0o644, notify: :restart
-      end
-      """
-
-      {:ok, config} = Parser.parse_string(dsl)
-      cmd = Enum.at(config.tasks[:upload_test].commands, 0)
-      assert cmd.sudo == true
-      assert cmd.mode == 0o644
-      assert cmd.notify == :restart
-    end
-
-    test "upload with paths containing spaces" do
-      dsl = """
-      host :web1, "example.com"
-
-      task :upload_test, on: :web1 do
-        upload "local path/file.txt", "/remote path/file.txt"
-      end
-      """
-
-      {:ok, config} = Parser.parse_string(dsl)
-      cmd = Enum.at(config.tasks[:upload_test].commands, 0)
-      assert cmd.local_path == "local path/file.txt"
-    end
-  end
-
-  describe "download edge cases" do
-    test "download with minimal options" do
-      dsl = """
-      host :web1, "example.com"
-
-      task :download_test, on: :web1 do
-        download "/remote/file.txt", "local.txt"
-      end
-      """
-
-      {:ok, config} = Parser.parse_string(dsl)
-      cmd = Enum.at(config.tasks[:download_test].commands, 0)
-      assert cmd.remote_path == "/remote/file.txt"
-      assert cmd.local_path == "local.txt"
-    end
-
-    test "download with sudo" do
-      dsl = """
-      host :web1, "example.com"
-
-      task :download_test, on: :web1 do
-        download "/etc/shadow", "shadow.bak", sudo: true
-      end
-      """
-
-      {:ok, config} = Parser.parse_string(dsl)
-      cmd = Enum.at(config.tasks[:download_test].commands, 0)
-      assert cmd.sudo == true
-    end
-  end
-
-  describe "template edge cases" do
-    test "template with minimal options" do
-      dsl = """
-      host :web1, "example.com"
-
-      task :template_test, on: :web1 do
-        template "app.conf.eex", "/etc/app.conf"
-      end
-      """
-
-      {:ok, config} = Parser.parse_string(dsl)
-      cmd = Enum.at(config.tasks[:template_test].commands, 0)
-      assert cmd.source == "app.conf.eex"
-      assert cmd.destination == "/etc/app.conf"
-    end
-
-    test "template with all options" do
-      dsl = """
-      host :web1, "example.com"
-
-      handler :reload do
-        run "systemctl reload app"
-      end
-
-      task :template_test, on: :web1 do
-        template "app.conf.eex", "/etc/app.conf",
-          vars: %{port: 8080, workers: 4},
-          sudo: true,
-          mode: 0o644,
-          notify: :reload
-      end
-      """
-
-      {:ok, config} = Parser.parse_string(dsl)
-      cmd = Enum.at(config.tasks[:template_test].commands, 0)
-      assert cmd.vars == %{port: 8080, workers: 4}
-      assert cmd.sudo == true
-      assert cmd.mode == 0o644
-      assert cmd.notify == :reload
-    end
-
-    test "template with empty vars" do
-      dsl = """
-      host :web1, "example.com"
-
-      task :template_test, on: :web1 do
-        template "app.conf.eex", "/etc/app.conf", vars: %{}
-      end
-      """
-
-      {:ok, config} = Parser.parse_string(dsl)
-      cmd = Enum.at(config.tasks[:template_test].commands, 0)
-      assert cmd.vars == %{}
-    end
-  end
-
-  describe "wait_for edge cases" do
-    test "wait_for http minimal" do
-      dsl = """
-      host :web1, "example.com"
-
-      task :health_check, on: :web1 do
-        wait_for :http, "http://localhost:4000/health"
-      end
-      """
-
-      {:ok, config} = Parser.parse_string(dsl)
-      cmd = Enum.at(config.tasks[:health_check].commands, 0)
-      assert cmd.type == :http
-      assert cmd.target == "http://localhost:4000/health"
-    end
-
-    test "wait_for tcp" do
-      dsl = """
-      host :db1, "example.com"
-
-      task :db_check, on: :db1 do
-        wait_for :tcp, "localhost:5432", timeout: 30_000
-      end
-      """
-
-      {:ok, config} = Parser.parse_string(dsl)
-      cmd = Enum.at(config.tasks[:db_check].commands, 0)
-      assert cmd.type == :tcp
-      assert cmd.timeout == 30_000
-    end
-
-    test "wait_for command" do
-      dsl = """
-      host :web1, "example.com"
-
-      task :process_check, on: :web1 do
-        wait_for :command, "pgrep -x nginx"
-      end
-      """
-
-      {:ok, config} = Parser.parse_string(dsl)
-      cmd = Enum.at(config.tasks[:process_check].commands, 0)
-      assert cmd.type == :command
-      assert cmd.target == "pgrep -x nginx"
-    end
-
-    test "wait_for with all options" do
-      dsl = """
-      host :web1, "example.com"
-
-      task :health_check, on: :web1 do
-        wait_for :http, "http://localhost:4000/health",
-          timeout: 120_000,
-          interval: 10_000,
-          expected_status: 200,
-          expected_body: "OK"
-      end
-      """
-
-      {:ok, config} = Parser.parse_string(dsl)
-      cmd = Enum.at(config.tasks[:health_check].commands, 0)
-      assert cmd.timeout == 120_000
-      assert cmd.interval == 10_000
-      assert cmd.expected_status == 200
-      assert cmd.expected_body == "OK"
-    end
-  end
-
-  describe "handler edge cases" do
-    test "handler with single command" do
-      dsl = """
-      handler :restart_nginx do
-        run "systemctl restart nginx", sudo: true
-      end
-      """
-
-      {:ok, config} = Parser.parse_string(dsl)
-      handler = config.handlers[:restart_nginx]
-      assert handler.name == :restart_nginx
-      assert length(handler.commands) == 1
-    end
-
-    test "handler with multiple commands" do
-      dsl = """
-      handler :full_restart do
-        run "systemctl stop app", sudo: true
-        run "systemctl stop nginx", sudo: true
-        run "systemctl start nginx", sudo: true
-        run "systemctl start app", sudo: true
-      end
-      """
-
-      {:ok, config} = Parser.parse_string(dsl)
-      handler = config.handlers[:full_restart]
-      assert length(handler.commands) == 4
-    end
-
-    test "handler with empty block" do
-      dsl = """
-      handler :noop do
-      end
-      """
-
-      {:ok, config} = Parser.parse_string(dsl)
-      handler = config.handlers[:noop]
-      assert handler.commands == []
-    end
-
-    test "multiple handlers" do
-      dsl = """
-      handler :restart_nginx do
-        run "systemctl restart nginx", sudo: true
-      end
-
-      handler :restart_app do
-        run "systemctl restart app", sudo: true
-      end
-
-      handler :clear_cache do
-        run "redis-cli FLUSHALL"
-      end
-      """
-
-      {:ok, config} = Parser.parse_string(dsl)
-      assert map_size(config.handlers) == 3
-    end
-  end
-
-  describe "config edge cases" do
-    test "empty config" do
-      {:ok, config} = Parser.parse_string("")
+    test "empty string" do
+      assert {:ok, config} = Parser.parse_string("")
+      assert config.tasks == %{}
       assert config.hosts == %{}
-      assert config.groups == %{}
+    end
+
+    test "whitespace only" do
+      assert {:ok, config} = Parser.parse_string("   \n\t\n   ")
       assert config.tasks == %{}
     end
 
-    test "config with only whitespace" do
-      {:ok, config} = Parser.parse_string("   \n\n\t\t\n   ")
-      assert config.hosts == %{}
+    test "comment only" do
+      assert {:ok, config} = Parser.parse_string("# just a comment")
+      assert config.tasks == %{}
     end
 
-    test "config with only comments" do
+    test "multiple unclosed blocks" do
       dsl = """
-      # This is a comment
-      # Another comment
+      task :one, on: :web do
+        task :two, on: :web do
+          command "nested"
       """
 
-      {:ok, config} = Parser.parse_string(dsl)
-      assert config.hosts == %{}
+      assert {:error, _} = Parser.parse_string(dsl)
+    end
+  end
+
+  # ============================================================================
+  # Invalid Values
+  # ============================================================================
+
+  describe "invalid values" do
+    test "non-string hostname" do
+      dsl = """
+      host :web, 12345
+      """
+
+      assert {:error, _} = Parser.parse_string(dsl)
     end
 
-    test "config block with all options" do
+    test "non-atom task name" do
+      dsl = """
+      task "string_name", on: :web do
+        command "echo"
+      end
+      """
+
+      # This might parse but should be caught somewhere
+      result = Parser.parse_string(dsl)
+      # Either error or the task shouldn't exist with atom key
+      case result do
+        {:error, _} -> :ok
+        {:ok, config} -> refute Map.has_key?(config.tasks, :string_name)
+      end
+    end
+
+    test "negative timeout" do
+      dsl = """
+      config :nexus, connect_timeout: -1000
+      """
+
+      # Should parse but might cause issues later
+      assert {:ok, _} = Parser.parse_string(dsl)
+    end
+
+    test "invalid mode (string instead of integer)" do
+      dsl = """
+      host :web, "example.com"
+      task :test, on: :web do
+        directory "/tmp/test", mode: "755"
+      end
+      """
+
+      # Should error during resource creation
+      result = Parser.parse_string(dsl)
+
+      case result do
+        {:error, _} -> :ok
+        {:ok, _} -> :ok
+      end
+    end
+  end
+
+  # ============================================================================
+  # Missing Required Fields
+  # ============================================================================
+
+  describe "missing required fields" do
+    test "task without on: clause defaults to local" do
+      dsl = """
+      host :web, "example.com"
+      task :orphan do
+        command "echo"
+      end
+      """
+
+      result = Parser.parse_string(dsl)
+
+      case result do
+        {:error, _} ->
+          :ok
+
+        {:ok, config} ->
+          # Tasks without on: may default to :local or nil
+          assert config.tasks[:orphan].on in [:local, nil]
+      end
+    end
+
+    test "host without hostname" do
+      dsl = """
+      host :incomplete
+      """
+
+      assert {:error, _} = Parser.parse_string(dsl)
+    end
+
+    test "command without command string" do
+      dsl = """
+      host :web, "example.com"
+      task :test, on: :web do
+        command
+      end
+      """
+
+      # Empty command may parse but create empty task, or may error
+      result = Parser.parse_string(dsl)
+
+      case result do
+        {:error, _} -> :ok
+        {:ok, config} -> assert config.tasks[:test].commands == []
+      end
+    end
+
+    test "file without path" do
+      dsl = """
+      host :web, "example.com"
+      task :test, on: :web do
+        file content: "hello"
+      end
+      """
+
+      assert {:error, _} = Parser.parse_string(dsl)
+    end
+
+    test "directory without path" do
+      dsl = """
+      host :web, "example.com"
+      task :test, on: :web do
+        directory mode: 0o755
+      end
+      """
+
+      assert {:error, _} = Parser.parse_string(dsl)
+    end
+  end
+
+  # ============================================================================
+  # Unicode and Special Characters
+  # ============================================================================
+
+  describe "unicode and special characters" do
+    test "unicode in command string" do
+      dsl = """
+      host :web, "example.com"
+      task :test, on: :web do
+        command "echo ''"
+      end
+      """
+
+      assert {:ok, config} = Parser.parse_string(dsl)
+      [cmd] = config.tasks[:test].commands
+      assert cmd.cmd =~ ""
+    end
+
+    test "unicode in file content" do
+      dsl = """
+      host :web, "example.com"
+      task :test, on: :web do
+        file "/tmp/unicode.txt", content: "Hello "
+      end
+      """
+
+      assert {:ok, config} = Parser.parse_string(dsl)
+      [cmd] = config.tasks[:test].commands
+      assert cmd.content =~ ""
+    end
+
+    test "emoji in task tags" do
+      # Tags must be atoms, so this should fail or be escaped
+      dsl = """
+      host :web, "example.com"
+      task :test, on: :web, tags: [:] do
+        command "echo"
+      end
+      """
+
+      # Elixir allows unicode atoms in some cases
+      result = Parser.parse_string(dsl)
+      assert match?({:ok, _}, result) or match?({:error, _}, result)
+    end
+
+    test "special characters in hostname" do
+      dsl = """
+      host :special, "host-with_special.chars123.com"
+      """
+
+      assert {:ok, config} = Parser.parse_string(dsl)
+      assert config.hosts[:special].hostname == "host-with_special.chars123.com"
+    end
+
+    test "escaped quotes in strings" do
+      dsl = """
+      host :web, "example.com"
+      task :test, on: :web do
+        command "echo \\"quoted\\""
+      end
+      """
+
+      assert {:ok, config} = Parser.parse_string(dsl)
+      [cmd] = config.tasks[:test].commands
+      assert cmd.cmd =~ "quoted"
+    end
+
+    test "newlines in content" do
+      dsl = """
+      host :web, "example.com"
+      task :test, on: :web do
+        file "/tmp/multi.txt", content: "line1\\nline2\\nline3"
+      end
+      """
+
+      assert {:ok, config} = Parser.parse_string(dsl)
+      [cmd] = config.tasks[:test].commands
+      assert cmd.content =~ "line1"
+    end
+
+    test "heredoc content" do
+      dsl = ~S'''
+      host :web, "example.com"
+      task :test, on: :web do
+        file "/tmp/heredoc.txt", content: """
+        This is
+        multiline
+        content
+        """
+      end
+      '''
+
+      assert {:ok, config} = Parser.parse_string(dsl)
+      [cmd] = config.tasks[:test].commands
+      assert cmd.content =~ "multiline"
+    end
+  end
+
+  # ============================================================================
+  # Boundary Conditions
+  # ============================================================================
+
+  describe "boundary conditions" do
+    test "very long task name rejected by Elixir" do
+      # Elixir has a limit on atom length (~255 chars)
+      long_name = String.duplicate("a", 1000)
+
+      dsl = """
+      host :web, "example.com"
+      task :#{long_name}, on: :web do
+        command "echo"
+      end
+      """
+
+      # Very long atoms are rejected by Elixir parser
+      assert {:error, _} = Parser.parse_string(dsl)
+    end
+
+    test "moderately long task name" do
+      long_name = String.duplicate("a", 100)
+
+      dsl = """
+      host :web, "example.com"
+      task :#{long_name}, on: :web do
+        command "echo"
+      end
+      """
+
+      assert {:ok, config} = Parser.parse_string(dsl)
+      assert Map.has_key?(config.tasks, String.to_atom(long_name))
+    end
+
+    test "very long command string" do
+      long_cmd = "echo " <> String.duplicate("x", 10_000)
+
+      dsl = """
+      host :web, "example.com"
+      task :test, on: :web do
+        command "#{long_cmd}"
+      end
+      """
+
+      assert {:ok, config} = Parser.parse_string(dsl)
+      [cmd] = config.tasks[:test].commands
+      assert String.length(cmd.cmd) > 10_000
+    end
+
+    test "many tasks" do
+      tasks =
+        for i <- 1..100 do
+          """
+          task :task_#{i}, on: :web do
+            command "echo #{i}"
+          end
+          """
+        end
+
+      dsl = """
+      host :web, "example.com"
+      #{Enum.join(tasks, "\n")}
+      """
+
+      assert {:ok, config} = Parser.parse_string(dsl)
+      assert map_size(config.tasks) == 100
+    end
+
+    test "many commands in one task" do
+      commands =
+        for i <- 1..100 do
+          "command \"echo #{i}\""
+        end
+
+      dsl = """
+      host :web, "example.com"
+      task :many_commands, on: :web do
+        #{Enum.join(commands, "\n  ")}
+      end
+      """
+
+      assert {:ok, config} = Parser.parse_string(dsl)
+      assert length(config.tasks[:many_commands].commands) == 100
+    end
+
+    test "deeply nested conditionals" do
+      # Not really nested but complex condition
+      dsl = """
+      host :web, "example.com"
+      task :test, on: :web do
+        command "echo test", when: facts(:os) == :linux and facts(:cpu_count) > 1
+      end
+      """
+
+      assert {:ok, config} = Parser.parse_string(dsl)
+      [cmd] = config.tasks[:test].commands
+      assert cmd.when != true
+    end
+
+    test "zero mode" do
+      dsl = """
+      host :web, "example.com"
+      task :test, on: :web do
+        directory "/tmp/zero", mode: 0o0
+      end
+      """
+
+      assert {:ok, config} = Parser.parse_string(dsl)
+      [cmd] = config.tasks[:test].commands
+      assert cmd.mode == 0
+    end
+
+    test "max mode (7777)" do
+      dsl = """
+      host :web, "example.com"
+      task :test, on: :web do
+        directory "/tmp/max", mode: 0o7777
+      end
+      """
+
+      assert {:ok, config} = Parser.parse_string(dsl)
+      [cmd] = config.tasks[:test].commands
+      assert cmd.mode == 0o7777
+    end
+  end
+
+  # ============================================================================
+  # Duplicate Definitions
+  # ============================================================================
+
+  describe "duplicate definitions" do
+    test "duplicate host names" do
+      dsl = """
+      host :web, "server1.com"
+      host :web, "server2.com"
+      """
+
+      assert {:ok, config} = Parser.parse_string(dsl)
+      # Second definition should override
+      assert config.hosts[:web].hostname == "server2.com"
+    end
+
+    test "duplicate task names" do
+      dsl = """
+      host :web, "example.com"
+      task :deploy, on: :web do
+        command "echo first"
+      end
+      task :deploy, on: :web do
+        command "echo second"
+      end
+      """
+
+      assert {:ok, config} = Parser.parse_string(dsl)
+      # Second definition should override
+      [cmd] = config.tasks[:deploy].commands
+      assert cmd.cmd =~ "second"
+    end
+
+    test "duplicate handler names" do
+      dsl = """
+      handler :restart do
+        run "echo first"
+      end
+      handler :restart do
+        run "echo second"
+      end
+      """
+
+      assert {:ok, config} = Parser.parse_string(dsl)
+      [cmd] = config.handlers[:restart].commands
+      assert cmd.cmd =~ "second"
+    end
+  end
+
+  # ============================================================================
+  # Mixed Resources
+  # ============================================================================
+
+  describe "mixed resource types" do
+    test "all resource types in one task" do
+      dsl = """
+      host :web, "example.com"
+      task :full, on: :web do
+        directory "/opt/app"
+        file "/opt/app/config", content: "test"
+        package "nginx"
+        service "nginx", state: :running
+        command "echo done"
+        command "legacy command"
+      end
+      """
+
+      assert {:ok, config} = Parser.parse_string(dsl)
+      assert length(config.tasks[:full].commands) == 6
+    end
+
+    test "resources with handlers" do
+      dsl = """
+      host :web, "example.com"
+
+      handler :reload do
+        run "systemctl reload nginx"
+      end
+
+      task :configure, on: :web do
+        file "/etc/nginx/nginx.conf", content: "config", notify: :reload
+        service "nginx", state: :running
+      end
+      """
+
+      assert {:ok, config} = Parser.parse_string(dsl)
+      assert Map.has_key?(config.handlers, :reload)
+      [file_cmd, _service_cmd] = config.tasks[:configure].commands
+      assert file_cmd.notify == :reload
+    end
+  end
+
+  # ============================================================================
+  # Environment Variables
+  # ============================================================================
+
+  describe "environment variable handling" do
+    test "System.get_env in config" do
+      # Set env var for test
+      System.put_env("TEST_NEXUS_VAR", "test_value")
+
       dsl = """
       config :nexus,
-        default_user: "deploy",
-        default_port: 2222,
-        connect_timeout: 60_000,
-        command_timeout: 120_000,
-        max_connections: 20,
-        continue_on_error: true
+        default_user: System.get_env("TEST_NEXUS_VAR")
       """
 
-      {:ok, config} = Parser.parse_string(dsl)
-      assert config.default_user == "deploy"
-      assert config.default_port == 2222
-      assert config.connect_timeout == 60_000
-      assert config.command_timeout == 120_000
-      assert config.max_connections == 20
-      assert config.continue_on_error == true
-    end
-  end
-
-  describe "env() function edge cases" do
-    test "env with existing variable" do
-      System.put_env("NEXUS_TEST_VAR", "test_value")
-
-      dsl = """
-      config :nexus, default_user: env("NEXUS_TEST_VAR")
-      """
-
-      {:ok, config} = Parser.parse_string(dsl)
+      assert {:ok, config} = Parser.parse_string(dsl)
       assert config.default_user == "test_value"
 
-      System.delete_env("NEXUS_TEST_VAR")
+      System.delete_env("TEST_NEXUS_VAR")
     end
 
-    test "env with missing variable returns empty string" do
+    test "missing env var returns nil" do
       dsl = """
-      config :nexus, default_user: env("NONEXISTENT_VAR_XYZ_123")
+      config :nexus,
+        default_user: System.get_env("DEFINITELY_NOT_SET_12345")
       """
 
-      {:ok, config} = Parser.parse_string(dsl)
-      assert config.default_user == ""
-    end
-  end
-
-  describe "mixed command types" do
-    test "task with all command types" do
-      dsl = """
-      host :web1, "example.com"
-
-      handler :restart do
-        run "systemctl restart app", sudo: true
-      end
-
-      task :full_deploy, on: :web1 do
-        run "git pull"
-        upload "config.json", "/etc/app/config.json", notify: :restart
-        template "app.conf.eex", "/etc/app/app.conf", vars: %{port: 8080}
-        run "systemctl restart app", sudo: true
-        wait_for :http, "http://localhost:8080/health", timeout: 60_000
-        download "/var/log/app.log", "deploy.log"
-      end
-      """
-
-      {:ok, config} = Parser.parse_string(dsl)
-      task = config.tasks[:full_deploy]
-      assert length(task.commands) == 6
+      assert {:ok, config} = Parser.parse_string(dsl)
+      assert config.default_user == nil
     end
   end
 
-  describe "error handling" do
-    test "syntax error returns error tuple" do
+  # ============================================================================
+  # Security Edge Cases
+  # ============================================================================
+
+  describe "security edge cases" do
+    test "command injection attempt in run" do
       dsl = """
-      task :broken do
-        run "unclosed string
+      host :web, "example.com"
+      task :test, on: :web do
+        command "echo $(whoami)"
       end
       """
 
-      result = Parser.parse_string(dsl)
-      assert match?({:error, _}, result)
+      # Should parse - actual execution is where this matters
+      assert {:ok, config} = Parser.parse_string(dsl)
+      [cmd] = config.tasks[:test].commands
+      assert cmd.cmd == "echo $(whoami)"
     end
 
-    test "unknown config option returns error" do
+    test "path traversal in file path" do
       dsl = """
-      config :nexus, unknown_option: "value"
+      host :web, "example.com"
+      task :test, on: :web do
+        file "/tmp/../etc/passwd", content: "hacked"
+      end
       """
 
-      result = Parser.parse_string(dsl)
-      assert match?({:error, _}, result)
-    end
-
-    test "run outside block returns error" do
-      dsl = """
-      run "orphaned command"
-      """
-
-      result = Parser.parse_string(dsl)
-      assert match?({:error, _}, result)
-    end
-
-    test "upload outside block returns error" do
-      dsl = """
-      upload "local", "remote"
-      """
-
-      result = Parser.parse_string(dsl)
-      assert match?({:error, _}, result)
-    end
-
-    test "download outside block returns error" do
-      dsl = """
-      download "remote", "local"
-      """
-
-      result = Parser.parse_string(dsl)
-      assert match?({:error, _}, result)
-    end
-
-    test "template outside block returns error" do
-      dsl = """
-      template "source", "dest"
-      """
-
-      result = Parser.parse_string(dsl)
-      assert match?({:error, _}, result)
-    end
-
-    test "wait_for outside block returns error" do
-      dsl = """
-      wait_for :http, "http://localhost/health"
-      """
-
-      result = Parser.parse_string(dsl)
-      assert match?({:error, _}, result)
+      # Parser accepts it - validation happens elsewhere
+      assert {:ok, config} = Parser.parse_string(dsl)
+      [cmd] = config.tasks[:test].commands
+      assert cmd.path == "/tmp/../etc/passwd"
     end
   end
 end

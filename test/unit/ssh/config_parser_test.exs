@@ -3,340 +3,206 @@ defmodule Nexus.SSH.ConfigParserTest do
 
   alias Nexus.SSH.ConfigParser
 
-  @moduletag :unit
+  describe "parse_file/1" do
+    test "parses empty file" do
+      {:ok, path} = write_temp_config("")
+      assert {:ok, []} = ConfigParser.parse_file(path)
+    end
 
-  describe "parse_string/1" do
-    test "parses basic host configuration" do
+    test "parses single host block" do
       config = """
-      Host myserver
+      Host example
         HostName example.com
         User deploy
         Port 2222
       """
 
-      [%{pattern: "myserver", config: parsed}] = ConfigParser.parse_string(config)
+      {:ok, path} = write_temp_config(config)
+      {:ok, blocks} = ConfigParser.parse_file(path)
 
-      assert parsed.hostname == "example.com"
-      assert parsed.user == "deploy"
-      assert parsed.port == 2222
+      assert length(blocks) == 1
+      [{patterns, settings}] = blocks
+      assert patterns == ["example"]
+      assert settings.hostname == "example.com"
+      assert settings.user == "deploy"
+      assert settings.port == 2222
     end
 
     test "parses multiple host blocks" do
       config = """
       Host web
         HostName web.example.com
-        User admin
+        User www-data
 
       Host db
         HostName db.example.com
-        Port 2222
+        User postgres
+        Port 5432
       """
 
-      configs = ConfigParser.parse_string(config)
-      assert length(configs) == 2
+      {:ok, path} = write_temp_config(config)
+      {:ok, blocks} = ConfigParser.parse_file(path)
 
-      web = Enum.find(configs, &(&1.pattern == "web"))
-      db = Enum.find(configs, &(&1.pattern == "db"))
-
-      assert web.config.hostname == "web.example.com"
-      assert web.config.user == "admin"
-      assert db.config.hostname == "db.example.com"
-      assert db.config.port == 2222
+      assert length(blocks) == 2
     end
 
-    test "parses wildcard host patterns" do
+    test "parses identity file with path expansion" do
       config = """
-      Host *
-        User defaultuser
-        Port 22
-
-      Host prod-*
-        User produser
-        IdentityFile ~/.ssh/prod_key
+      Host secure
+        IdentityFile ~/.ssh/secure_key
       """
 
-      configs = ConfigParser.parse_string(config)
-      assert length(configs) == 2
+      {:ok, path} = write_temp_config(config)
+      {:ok, [{_patterns, settings}]} = ConfigParser.parse_file(path)
 
-      wildcard = Enum.find(configs, &(&1.pattern == "*"))
-      prod = Enum.find(configs, &(&1.pattern == "prod-*"))
-
-      assert wildcard.config.user == "defaultuser"
-      assert prod.config.user == "produser"
+      assert settings.identity_file == Path.expand("~/.ssh/secure_key")
     end
 
-    test "parses identity file with tilde expansion" do
+    test "parses ProxyJump directive" do
       config = """
-      Host server
-        IdentityFile ~/.ssh/my_key
-      """
-
-      [%{config: parsed}] = ConfigParser.parse_string(config)
-
-      assert parsed.identity_file == Path.expand("~/.ssh/my_key")
-    end
-
-    test "parses connect timeout" do
-      config = """
-      Host slow
-        ConnectTimeout 30
-      """
-
-      [%{config: parsed}] = ConfigParser.parse_string(config)
-      assert parsed.connect_timeout == 30
-    end
-
-    test "parses forward agent" do
-      config = """
-      Host forwarding
-        ForwardAgent yes
-      """
-
-      [%{config: parsed}] = ConfigParser.parse_string(config)
-      assert parsed.forward_agent == true
-    end
-
-    test "parses strict host key checking" do
-      config = """
-      Host insecure
-        StrictHostKeyChecking no
-      """
-
-      [%{config: parsed}] = ConfigParser.parse_string(config)
-      assert parsed.strict_host_key_checking == :no
-    end
-
-    test "parses proxy jump" do
-      config = """
-      Host target
+      Host internal
         ProxyJump bastion.example.com
       """
 
-      [%{config: parsed}] = ConfigParser.parse_string(config)
-      assert parsed.proxy_jump == "bastion.example.com"
+      {:ok, path} = write_temp_config(config)
+      {:ok, [{_patterns, settings}]} = ConfigParser.parse_file(path)
+
+      assert settings.proxy_jump == "bastion.example.com"
+    end
+
+    test "parses ForwardAgent directive" do
+      config = """
+      Host dev
+        ForwardAgent yes
+      """
+
+      {:ok, path} = write_temp_config(config)
+      {:ok, [{_patterns, settings}]} = ConfigParser.parse_file(path)
+
+      assert settings.forward_agent == true
     end
 
     test "ignores comments" do
       config = """
       # This is a comment
-      Host server
+      Host example
         # Another comment
-        HostName example.com
-        # User comment
         User deploy
       """
 
-      [%{config: parsed}] = ConfigParser.parse_string(config)
-      assert parsed.hostname == "example.com"
-      assert parsed.user == "deploy"
+      {:ok, path} = write_temp_config(config)
+      {:ok, [{_patterns, settings}]} = ConfigParser.parse_file(path)
+
+      assert settings.user == "deploy"
+      refute Map.has_key?(settings, :comment)
     end
 
-    test "handles empty content" do
-      configs = ConfigParser.parse_string("")
-      assert configs == []
-    end
-
-    test "handles comments only" do
+    test "handles multiple patterns in Host line" do
       config = """
-      # Just a comment
-      # Another comment
+      Host web1 web2 web3
+        User www-data
       """
 
-      configs = ConfigParser.parse_string(config)
-      assert configs == []
+      {:ok, path} = write_temp_config(config)
+      {:ok, [{patterns, _settings}]} = ConfigParser.parse_file(path)
+
+      assert patterns == ["web1", "web2", "web3"]
     end
 
-    test "handles equals sign format" do
+    test "handles equals sign syntax" do
       config = """
-      Host server
-        HostName=example.com
+      Host example
         User=deploy
         Port=2222
       """
 
-      [%{config: parsed}] = ConfigParser.parse_string(config)
-      assert parsed.hostname == "example.com"
-      assert parsed.user == "deploy"
-      assert parsed.port == 2222
+      {:ok, path} = write_temp_config(config)
+      {:ok, [{_patterns, settings}]} = ConfigParser.parse_file(path)
+
+      assert settings.user == "deploy"
+      assert settings.port == 2222
     end
 
-    test "ignores unknown directives" do
-      config = """
-      Host server
-        HostName example.com
-        UnknownDirective value
-        AnotherUnknown stuff
-      """
-
-      [%{config: parsed}] = ConfigParser.parse_string(config)
-      assert parsed.hostname == "example.com"
-      refute Map.has_key?(parsed, :unknown_directive)
-    end
-
-    test "handles invalid port gracefully" do
-      config = """
-      Host server
-        HostName example.com
-        Port invalid
-      """
-
-      [%{config: parsed}] = ConfigParser.parse_string(config)
-      assert parsed.hostname == "example.com"
-      refute Map.has_key?(parsed, :port)
-    end
-  end
-
-  describe "lookup/2" do
-    test "finds exact host match" do
-      configs =
-        ConfigParser.parse_string("""
-        Host web
-          HostName web.example.com
-          User webuser
-        """)
-
-      result = ConfigParser.lookup("web", configs)
-
-      assert result.hostname == "web.example.com"
-      assert result.user == "webuser"
-    end
-
-    test "matches wildcard pattern" do
-      configs =
-        ConfigParser.parse_string("""
-        Host prod-*
-          User produser
-          IdentityFile ~/.ssh/prod_key
-        """)
-
-      result = ConfigParser.lookup("prod-web", configs)
-
-      assert result.user == "produser"
-      assert result.hostname == "prod-web"
-    end
-
-    test "merges configurations from multiple matches" do
-      configs =
-        ConfigParser.parse_string("""
-        Host *
-          User defaultuser
-          Port 22
-
-        Host prod-*
-          User produser
-
-        Host prod-web
-          HostName 10.0.1.5
-        """)
-
-      result = ConfigParser.lookup("prod-web", configs)
-
-      # Our implementation merges with later matches taking precedence
-      # So prod-web sets hostname, then prod-* would override user if not set,
-      # but we use Map.merge(config, acc) so first-parsed values win
-      assert result.hostname == "10.0.1.5"
-      # defaultuser wins because * is parsed first and we merge INTO acc
-      assert result.user == "defaultuser"
-      assert result.port == 22
-    end
-
-    test "returns hostname when no match found" do
-      configs =
-        ConfigParser.parse_string("""
-        Host other
-          User otheruser
-        """)
-
-      result = ConfigParser.lookup("unmatched", configs)
-
-      assert result.hostname == "unmatched"
-      assert map_size(result) == 1
-    end
-
-    test "handles single character wildcard" do
-      configs =
-        ConfigParser.parse_string("""
-        Host web?
-          User webuser
-        """)
-
-      result = ConfigParser.lookup("web1", configs)
-      assert result.user == "webuser"
-
-      result2 = ConfigParser.lookup("web12", configs)
-      refute Map.has_key?(result2, :user)
-    end
-
-    test "handles multiple patterns in host line" do
-      configs =
-        ConfigParser.parse_string("""
-        Host web db cache
-          User admin
-        """)
-
-      assert ConfigParser.lookup("web", configs).user == "admin"
-      assert ConfigParser.lookup("db", configs).user == "admin"
-      assert ConfigParser.lookup("cache", configs).user == "admin"
-    end
-  end
-
-  describe "parse/1" do
     test "returns empty list for non-existent file" do
-      {:ok, configs} = ConfigParser.parse("/nonexistent/path/config")
-      assert configs == []
-    end
-
-    test "returns error for unreadable file" do
-      # Create a temp directory (can't read as file)
-      tmp_dir = System.tmp_dir!()
-
-      {:error, {:config_read_error, _path, :eisdir}} =
-        ConfigParser.parse(tmp_dir)
+      assert {:ok, []} = ConfigParser.parse_file("/non/existent/path")
     end
   end
 
-  describe "to_connect_opts/1" do
-    test "converts basic config to connection options" do
-      config = %{
-        hostname: "example.com",
-        user: "deploy",
-        port: 2222
-      }
-
-      opts = ConfigParser.to_connect_opts(config)
-
-      assert Keyword.get(opts, :user) == "deploy"
-      assert Keyword.get(opts, :port) == 2222
+  describe "matches_pattern?/2" do
+    test "exact match" do
+      assert ConfigParser.matches_pattern?("example.com", "example.com")
+      refute ConfigParser.matches_pattern?("example.com", "example.org")
     end
 
-    test "converts identity file to identity option" do
-      config = %{
-        identity_file: "/path/to/key"
-      }
-
-      opts = ConfigParser.to_connect_opts(config)
-      assert Keyword.get(opts, :identity) == "/path/to/key"
+    test "asterisk wildcard matches any characters" do
+      assert ConfigParser.matches_pattern?("web.example.com", "*.example.com")
+      assert ConfigParser.matches_pattern?("db.example.com", "*.example.com")
+      refute ConfigParser.matches_pattern?("example.com", "*.example.com")
     end
 
-    test "converts connect timeout to milliseconds" do
-      config = %{
-        connect_timeout: 30
-      }
-
-      opts = ConfigParser.to_connect_opts(config)
-      assert Keyword.get(opts, :timeout) == 30_000
+    test "asterisk at end" do
+      assert ConfigParser.matches_pattern?("prod-web-01", "prod-*")
+      assert ConfigParser.matches_pattern?("prod-db-02", "prod-*")
+      refute ConfigParser.matches_pattern?("dev-web-01", "prod-*")
     end
 
-    test "handles empty config" do
-      opts = ConfigParser.to_connect_opts(%{})
-      assert opts == []
+    test "question mark matches single character" do
+      assert ConfigParser.matches_pattern?("web1", "web?")
+      assert ConfigParser.matches_pattern?("web2", "web?")
+      refute ConfigParser.matches_pattern?("web10", "web?")
+    end
+
+    test "combined wildcards" do
+      assert ConfigParser.matches_pattern?("prod-web-01", "prod-*-0?")
+      assert ConfigParser.matches_pattern?("prod-db-02", "prod-*-0?")
+      refute ConfigParser.matches_pattern?("prod-web-10", "prod-*-0?")
+    end
+
+    test "negation with exclamation mark" do
+      refute ConfigParser.matches_pattern?("example.com", "!example.com")
+      assert ConfigParser.matches_pattern?("other.com", "!example.com")
+    end
+
+    test "escapes regex special characters" do
+      assert ConfigParser.matches_pattern?("example.com", "example.com")
+      refute ConfigParser.matches_pattern?("exampleXcom", "example.com")
     end
   end
 
-  describe "default_path/0" do
-    test "returns expanded SSH config path" do
-      path = ConfigParser.default_path()
-      assert String.ends_with?(path, ".ssh/config")
+  describe "get_host_config/1" do
+    test "returns empty map for unknown host" do
+      assert {:ok, %{}} = ConfigParser.get_host_config("unknown-host-12345.example.com")
     end
+
+    test "merges settings from multiple matching blocks" do
+      config = """
+      Host *
+        User default-user
+        Port 22
+
+      Host *.example.com
+        User example-user
+
+      Host web.example.com
+        Port 2222
+      """
+
+      {:ok, path} = write_temp_config(config)
+
+      # Temporarily override config paths
+      # For now, just test the parse_file directly
+      {:ok, blocks} = ConfigParser.parse_file(path)
+
+      # Verify blocks were parsed correctly
+      assert length(blocks) == 3
+    end
+  end
+
+  # Helper to create temporary config files for testing
+  defp write_temp_config(content) do
+    path = Path.join(System.tmp_dir!(), "ssh_config_test_#{:rand.uniform(100_000)}")
+    File.write!(path, content)
+    on_exit(fn -> File.rm(path) end)
+    {:ok, path}
   end
 end

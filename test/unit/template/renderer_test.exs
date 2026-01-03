@@ -54,7 +54,12 @@ defmodule Nexus.Template.RendererTest do
       # Note: EEx returns empty string for missing assigns with a warning
       template = "<%= @missing_var %>"
 
-      assert {:ok, ""} = Renderer.render_string(template, %{})
+      # Capture the expected warning about missing assign
+      ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        send(self(), Renderer.render_string(template, %{}))
+      end)
+
+      assert_receive {:ok, ""}
     end
   end
 

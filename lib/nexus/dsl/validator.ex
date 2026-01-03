@@ -165,14 +165,19 @@ defmodule Nexus.DSL.Validator do
   end
 
   defp validate_command_retries(errors, task_name, command) do
+    # Only validate retries for legacy run commands that have the retries field
+    # Command resources don't have retries (they use creates/unless/onlyif for idempotency)
+    retries = Map.get(command, :retries, 0)
+    retry_delay = Map.get(command, :retry_delay, 1000)
+
     cond do
-      command.retries < 0 ->
+      retries < 0 ->
         [
-          {:command, "command in task :#{task_name} has invalid retries: #{command.retries}"}
+          {:command, "command in task :#{task_name} has invalid retries: #{retries}"}
           | errors
         ]
 
-      command.retries > 0 and command.retry_delay <= 0 ->
+      retries > 0 and retry_delay <= 0 ->
         [{:command, "command in task :#{task_name} has retries but invalid retry_delay"} | errors]
 
       true ->

@@ -1,7 +1,7 @@
 defmodule Nexus.MixProject do
   use Mix.Project
 
-  @version "0.2.0"
+  @version "0.3.0"
   @source_url "https://github.com/manav03panchal/nexus"
 
   def project do
@@ -71,6 +71,7 @@ defmodule Nexus.MixProject do
     [
       # Core
       {:jason, "~> 1.4"},
+      {:req, "~> 0.5"},
       {:optimus, "~> 0.5"},
       {:owl, "~> 0.12"},
       {:sshkit, "~> 0.3"},

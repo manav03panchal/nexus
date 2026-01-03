@@ -12,7 +12,7 @@ defmodule Nexus.CLI.RunTest do
     test "runs a simple local task", %{tmp_dir: dir} do
       config_content = """
       task :build do
-        run "echo 'Hello from build'"
+        command "echo 'Hello from build'"
       end
       """
 
@@ -42,11 +42,11 @@ defmodule Nexus.CLI.RunTest do
     test "runs dry-run mode", %{tmp_dir: dir} do
       config_content = """
       task :build do
-        run "echo building"
+        command "echo building"
       end
 
       task :test, deps: [:build] do
-        run "echo testing"
+        command "echo testing"
       end
       """
 
@@ -78,15 +78,15 @@ defmodule Nexus.CLI.RunTest do
     test "shows dry-run with parallel phases", %{tmp_dir: dir} do
       config_content = """
       task :lint do
-        run "echo linting"
+        command "echo linting"
       end
 
       task :build do
-        run "echo building"
+        command "echo building"
       end
 
       task :test, deps: [:lint, :build] do
-        run "echo testing"
+        command "echo testing"
       end
       """
 
@@ -115,7 +115,7 @@ defmodule Nexus.CLI.RunTest do
     test "outputs JSON format for dry-run", %{tmp_dir: dir} do
       config_content = """
       task :build do
-        run "echo building"
+        command "echo building"
       end
       """
 
@@ -168,7 +168,7 @@ defmodule Nexus.CLI.RunTest do
     test "reports unknown tasks", %{tmp_dir: dir} do
       config_content = """
       task :build do
-        run "echo building"
+        command "echo building"
       end
       """
 
@@ -197,7 +197,7 @@ defmodule Nexus.CLI.RunTest do
     test "handles task failure", %{tmp_dir: dir} do
       config_content = """
       task :failing do
-        run "exit 1"
+        command "exit 1"
       end
       """
 
@@ -226,7 +226,7 @@ defmodule Nexus.CLI.RunTest do
     test "respects quiet mode", %{tmp_dir: dir} do
       config_content = """
       task :build do
-        run "echo building"
+        command "echo building"
       end
       """
 
@@ -256,11 +256,11 @@ defmodule Nexus.CLI.RunTest do
     test "parses comma-separated tasks", %{tmp_dir: dir} do
       config_content = """
       task :lint do
-        run "echo linting"
+        command "echo linting"
       end
 
       task :build do
-        run "echo building"
+        command "echo building"
       end
       """
 
@@ -289,11 +289,11 @@ defmodule Nexus.CLI.RunTest do
     test "parses space-separated tasks", %{tmp_dir: dir} do
       config_content = """
       task :lint do
-        run "echo linting"
+        command "echo linting"
       end
 
       task :build do
-        run "echo building"
+        command "echo building"
       end
       """
 

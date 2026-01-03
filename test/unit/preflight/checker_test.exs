@@ -275,11 +275,11 @@ defmodule Nexus.Preflight.CheckerTest do
     host :localhost, "test@127.0.0.1:22"
 
     task :build do
-      run "echo building"
+      command "echo building"
     end
 
     task :test, deps: [:build] do
-      run "echo testing"
+      command "echo testing"
     end
     """
 
@@ -289,11 +289,11 @@ defmodule Nexus.Preflight.CheckerTest do
   defp write_valid_config_no_hosts do
     content = """
     task :build do
-      run "echo building"
+      command "echo building"
     end
 
     task :test, deps: [:build] do
-      run "echo testing"
+      command "echo testing"
     end
     """
 

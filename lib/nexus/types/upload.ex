@@ -3,12 +3,15 @@ defmodule Nexus.Types.Upload do
   Represents a file upload command (local -> remote).
   """
 
+  @type condition :: term()
+
   @type t :: %__MODULE__{
           local_path: String.t(),
           remote_path: String.t(),
           sudo: boolean(),
           mode: non_neg_integer() | nil,
-          notify: atom() | nil
+          notify: atom() | nil,
+          when: condition()
         }
 
   @enforce_keys [:local_path, :remote_path]
@@ -17,7 +20,8 @@ defmodule Nexus.Types.Upload do
     :remote_path,
     :mode,
     :notify,
-    sudo: false
+    sudo: false,
+    when: true
   ]
 
   @doc """
@@ -46,7 +50,8 @@ defmodule Nexus.Types.Upload do
       remote_path: remote_path,
       sudo: Keyword.get(opts, :sudo, false),
       mode: Keyword.get(opts, :mode),
-      notify: Keyword.get(opts, :notify)
+      notify: Keyword.get(opts, :notify),
+      when: Keyword.get(opts, :when, true)
     }
   end
 end
