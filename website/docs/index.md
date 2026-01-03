@@ -6,30 +6,39 @@ title: Introduction
 
 # Nexus
 
-> **Last updated:** December 29, 2025
+> **Last updated:** January 3, 2026
 
 **Nexus** is a distributed task runner built in Elixir for deploying applications and running automation tasks across local and remote hosts.
 
 ## Why Nexus?
 
+- **Declarative Resources** - Define desired state with idempotent resources (package, service, file, etc.)
 - **Simple DSL** - Define tasks in readable Elixir syntax
 - **DAG Dependencies** - Tasks execute in optimal order based on dependencies
 - **SSH Execution** - Run commands on remote hosts with connection pooling
 - **Parallel Execution** - Execute independent tasks concurrently across hosts
-- **Zero-Downtime Deploys** - Serial execution strategy for rolling updates
+- **Zero-Downtime Deploys** - Serial/rolling execution strategies
 - **Built-in Resilience** - Retry logic with exponential backoff
-- **Pre-flight Checks** - Validate connectivity before execution
+- **Tailscale Integration** - Auto-discover hosts from your Tailscale network
+- **Secrets Management** - Encrypted vault for sensitive credentials
+- **Notifications** - Slack, Discord, Teams webhooks on completion
 - **Minimal Dependencies** - Single binary, no agents on remote hosts
 
 ## Features at a Glance
 
 | Feature | Description |
 |---------|-------------|
+| **Declarative Resources** | `package`, `service`, `file`, `directory`, `user`, `group`, `command` |
+| **Idempotent Commands** | `command` resource with `creates:`, `unless:`, `onlyif:` guards |
+| **Facts Gathering** | Auto-detect OS, architecture, memory, CPU for conditional logic |
+| **Tailscale Discovery** | `tailscale_hosts tag: "web", as: :webservers` |
+| **Encrypted Secrets** | AES-256-GCM vault with `nexus secret set/get` |
+| **Webhook Notifications** | Slack, Discord, Teams, or custom JSON webhooks |
 | **Local & Remote Execution** | Run commands locally or on remote hosts via SSH |
 | **Task Dependencies** | Define task ordering with `deps: [:task1, :task2]` |
 | **Host Groups** | Organize hosts into named groups for targeting |
 | **Parallel & Serial Modes** | Control execution strategy per task |
-| **Retry with Backoff** | Automatic retries with exponential backoff + jitter |
+| **Rolling Deploys** | Canary deployments with configurable batch sizes |
 | **Connection Pooling** | Efficient SSH connection reuse |
 | **Pre-flight Checks** | Validate config, connectivity, and auth before running |
 | **Dry-run Mode** | Preview execution plan without running commands |
@@ -67,27 +76,52 @@ nexus init
 host :web1, "deploy@192.168.1.10"
 host :web2, "deploy@192.168.1.11"
 
+# Or auto-discover from Tailscale
+tailscale_hosts tag: "webserver", as: :web
+
 # Group them
 group :web, [:web1, :web2]
 
+# Notifications on completion
+notify :slack,
+  url: env("SLACK_WEBHOOK_URL"),
+  on: :failure,
+  template: :slack
+
 # Local build task
 task :build do
-  run "mix deps.get --only prod"
-  run "MIX_ENV=prod mix release"
+  command "mix deps.get --only prod"
+  command "MIX_ENV=prod mix release"
+end
+
+# Deploy with declarative resources
+task :setup, on: :web do
+  # Ensure packages are installed
+  package "nginx"
+  
+  # Ensure directories exist
+  directory "/opt/myapp", owner: "deploy", mode: 0o755
+  
+  # Manage services
+  service "nginx", ensure: :running, enable: true
 end
 
 # Deploy to all web servers (runs in parallel by default)
-task :deploy, on: :web, deps: [:build] do
-  run "systemctl stop myapp", sudo: true
-  run "cp -r /tmp/release /opt/myapp"
-  run "systemctl start myapp", sudo: true
+task :deploy, on: :web, deps: [:build, :setup] do
+  command "systemctl stop myapp", sudo: true
+  
+  # Idempotent extraction - only runs if target doesn't exist
+  command "tar -xzf /tmp/release.tar.gz -C /opt/myapp",
+    creates: "/opt/myapp/bin/myapp"
+  
+  command "systemctl start myapp", sudo: true
 end
 
 # Rolling restart (one server at a time)
 task :restart, on: :web, strategy: :serial do
-  run "systemctl restart myapp", sudo: true
-  run "sleep 10"
-  run "curl -sf http://localhost:4000/health"
+  command "systemctl restart myapp", sudo: true
+  command "sleep 10"
+  command "curl -sf http://localhost:4000/health"
 end
 ```
 
@@ -175,22 +209,56 @@ nexus run deploy --format json      # JSON output
 
 ## Example Configurations
 
-### Phoenix Deployment
+### Phoenix Deployment with Resources
 
 ```elixir
+# Notify on completion
+notify :discord,
+  url: env("DISCORD_WEBHOOK"),
+  on: :always,
+  template: :discord
+
 task :release, deps: [:test] do
-  run "MIX_ENV=prod mix release"
+  command "MIX_ENV=prod mix release"
 end
 
-task :deploy, on: :web, deps: [:release], strategy: :serial do
-  run "systemctl stop myapp", sudo: true
-  run "tar -xzf /tmp/myapp.tar.gz -C /opt/myapp"
-  run "systemctl start myapp", sudo: true
-  run "curl -sf http://localhost:4000/health", retries: 5, retry_delay: 2_000
+task :setup, on: :web do
+  package "libssl-dev"
+  directory "/opt/myapp", owner: "deploy"
+  service "myapp", ensure: :stopped  # Stop before deploy
+end
+
+task :deploy, on: :web, deps: [:release, :setup], strategy: :serial do
+  # Only extract if binary doesn't exist (idempotent)
+  command "tar -xzf /tmp/myapp.tar.gz -C /opt/myapp",
+    creates: "/opt/myapp/bin/myapp"
+  
+  service "myapp", ensure: :running, enable: true
+  
+  # Health check with retries
+  command "curl -sf http://localhost:4000/health",
+    unless: "curl -sf http://localhost:4000/health"
 end
 
 task :migrate, on: :db, deps: [:deploy] do
-  run "/opt/myapp/bin/myapp eval 'MyApp.Release.migrate()'"
+  command "/opt/myapp/bin/myapp eval 'MyApp.Release.migrate()'"
+end
+```
+
+### Tailscale + Secrets
+
+```elixir
+# Auto-discover hosts from Tailscale network
+tailscale_hosts tag: "webserver", as: :web, user: "deploy"
+tailscale_hosts tag: "database", as: :db, user: "postgres"
+
+task :deploy, on: :web do
+  # Use secrets from encrypted vault
+  command "deploy.sh",
+    env: %{
+      "API_KEY" => secret("API_KEY"),
+      "DB_PASSWORD" => secret("DB_PASSWORD")
+    }
 end
 ```
 
@@ -198,18 +266,18 @@ end
 
 ```elixir
 task :build do
-  run "docker build -t myapp:latest ."
-  run "docker push registry.example.com/myapp:latest"
+  command "docker build -t myapp:latest ."
+  command "docker push registry.example.com/myapp:latest"
 end
 
 task :deploy, on: :docker_hosts, deps: [:build] do
-  run "docker compose pull"
-  run "docker compose up -d --remove-orphans"
-  run "docker compose ps"
+  command "docker compose pull"
+  command "docker compose up -d --remove-orphans"
+  command "docker compose ps"
 end
 ```
 
-### Multi-Environment
+### Multi-Environment with Facts
 
 ```elixir
 env = System.get_env("NEXUS_ENV") || "staging"
@@ -217,8 +285,19 @@ env = System.get_env("NEXUS_ENV") || "staging"
 if env == "production" do
   host :web1, "deploy@prod-web1.example.com"
   host :web2, "deploy@prod-web2.example.com"
+  
+  notify :pagerduty,
+    url: env("PAGERDUTY_WEBHOOK"),
+    on: :failure,
+    template: :generic
 else
   host :web1, "deploy@staging.example.com"
+end
+
+task :install, on: :web do
+  # Package resource auto-detects apt/yum/pacman
+  package "nginx"
+  package "postgresql-client"
 end
 ```
 

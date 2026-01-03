@@ -520,7 +520,270 @@ end
 
 ---
 
-## run
+## Resources
+
+Resources are **declarative, idempotent** primitives that describe the desired state of a system. Unlike imperative `run` commands, resources check current state before making changes.
+
+### command
+
+The `command` resource is the **recommended replacement for `run`** in task blocks. It supports idempotency guards that prevent unnecessary execution.
+
+#### Syntax
+
+```elixir
+command cmd, options \\ []
+```
+
+#### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `creates` | `String.t()` | `nil` | Skip if this path exists |
+| `removes` | `String.t()` | `nil` | Skip if this path doesn't exist |
+| `unless` | `String.t()` | `nil` | Skip if this command succeeds (exit 0) |
+| `onlyif` | `String.t()` | `nil` | Only run if this command succeeds (exit 0) |
+| `sudo` | `boolean()` | `false` | Run with sudo |
+| `user` | `String.t()` | `nil` | Run as specific user (with sudo) |
+| `cwd` | `String.t()` | `nil` | Working directory |
+| `env` | `map()` | `%{}` | Environment variables |
+| `timeout` | `pos_integer()` | `60_000` | Timeout in milliseconds |
+| `notify` | `atom()` | `nil` | Handler to trigger on change |
+
+#### Examples
+
+```elixir
+task :setup, on: :webservers do
+  # Always runs (like traditional run)
+  command "echo hello"
+
+  # Only runs if file doesn't exist (idempotent)
+  command "tar -xzf app.tar.gz -C /opt/app",
+    creates: "/opt/app/bin/app"
+
+  # Only runs if file exists
+  command "rm -rf /tmp/cache",
+    removes: "/tmp/cache"
+
+  # Only runs if check command fails (0 = skip)
+  command "mix deps.get",
+    unless: "mix deps.check",
+    cwd: "/opt/app"
+
+  # Only runs if check command succeeds (0 = run)
+  command "systemctl restart app",
+    onlyif: "systemctl is-active app"
+
+  # With environment variables
+  command "mix release",
+    env: %{"MIX_ENV" => "prod"},
+    cwd: "/opt/app"
+
+  # With handler notification
+  command "nginx -t", notify: :reload_nginx
+end
+```
+
+### package
+
+Manages system packages using the appropriate package manager (apt, yum, pacman, brew).
+
+#### Syntax
+
+```elixir
+package name, options \\ []
+```
+
+#### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `ensure` | `:present \| :absent \| :latest` | `:present` | Desired state |
+| `version` | `String.t()` | `nil` | Specific version to install |
+| `notify` | `atom()` | `nil` | Handler to trigger on change |
+
+#### Examples
+
+```elixir
+task :install_deps, on: :webservers do
+  package "nginx", ensure: :present
+  package "postgresql-client", ensure: :latest
+  package "old-package", ensure: :absent
+  package "redis", version: "6.2.0"
+end
+```
+
+### service
+
+Manages system services (systemd, launchd, etc.).
+
+#### Syntax
+
+```elixir
+service name, options \\ []
+```
+
+#### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `ensure` | `:running \| :stopped` | `:running` | Desired state |
+| `enable` | `boolean()` | `true` | Start on boot |
+| `notify` | `atom()` | `nil` | Handler to trigger on change |
+
+#### Examples
+
+```elixir
+task :configure_services, on: :webservers do
+  service "nginx", ensure: :running, enable: true
+  service "postgresql", ensure: :running
+  service "old-service", ensure: :stopped, enable: false
+end
+```
+
+### file
+
+Manages files with content, permissions, and ownership.
+
+#### Syntax
+
+```elixir
+file path, options
+```
+
+#### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `ensure` | `:present \| :absent` | `:present` | Whether file should exist |
+| `content` | `String.t()` | `nil` | File contents |
+| `source` | `String.t()` | `nil` | Source file path |
+| `mode` | `integer()` | `nil` | File permissions (e.g., `0o644`) |
+| `owner` | `String.t()` | `nil` | File owner |
+| `group` | `String.t()` | `nil` | File group |
+| `notify` | `atom()` | `nil` | Handler to trigger on change |
+
+#### Examples
+
+```elixir
+task :configure, on: :webservers do
+  file "/etc/myapp/config.json",
+    content: ~s({"port": 4000, "env": "production"}),
+    mode: 0o644,
+    owner: "deploy",
+    notify: :restart_app
+
+  file "/tmp/old-file", ensure: :absent
+end
+```
+
+### directory
+
+Manages directories with permissions and ownership.
+
+#### Syntax
+
+```elixir
+directory path, options \\ []
+```
+
+#### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `ensure` | `:present \| :absent` | `:present` | Whether directory should exist |
+| `mode` | `integer()` | `nil` | Directory permissions |
+| `owner` | `String.t()` | `nil` | Directory owner |
+| `group` | `String.t()` | `nil` | Directory group |
+| `recursive` | `boolean()` | `false` | Create parent directories |
+
+#### Examples
+
+```elixir
+task :setup_dirs, on: :webservers do
+  directory "/opt/myapp",
+    owner: "deploy",
+    group: "deploy",
+    mode: 0o755
+
+  directory "/opt/myapp/releases",
+    recursive: true
+
+  directory "/tmp/old-dir", ensure: :absent
+end
+```
+
+### user
+
+Manages system users.
+
+#### Syntax
+
+```elixir
+user name, options \\ []
+```
+
+#### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `ensure` | `:present \| :absent` | `:present` | Whether user should exist |
+| `uid` | `integer()` | `nil` | User ID |
+| `gid` | `integer()` | `nil` | Primary group ID |
+| `home` | `String.t()` | `nil` | Home directory |
+| `shell` | `String.t()` | `nil` | Login shell |
+| `groups` | `[String.t()]` | `[]` | Supplementary groups |
+| `system` | `boolean()` | `false` | Create as system user |
+
+#### Examples
+
+```elixir
+task :setup_users, on: :webservers do
+  user "deploy",
+    home: "/home/deploy",
+    shell: "/bin/bash",
+    groups: ["sudo", "docker"]
+
+  user "myapp",
+    system: true,
+    home: "/opt/myapp",
+    shell: "/usr/sbin/nologin"
+end
+```
+
+### group
+
+Manages system groups.
+
+#### Syntax
+
+```elixir
+group name, options \\ []
+```
+
+#### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `ensure` | `:present \| :absent` | `:present` | Whether group should exist |
+| `gid` | `integer()` | `nil` | Group ID |
+| `system` | `boolean()` | `false` | Create as system group |
+
+#### Examples
+
+```elixir
+task :setup_groups, on: :webservers do
+  group "deploy", gid: 1001
+  group "myapp", system: true
+end
+```
+
+---
+
+## run (Legacy)
+
+:::warning Deprecated in Task Blocks
+The `run` macro is **deprecated for use in task blocks**. Use the `command` resource instead for idempotent execution. `run` is still valid in handler blocks.
+:::
 
 The `run` macro adds a command to the current task.
 
@@ -550,18 +813,15 @@ run command, options \\ []
 ### Basic Examples
 
 ```elixir
+# In handlers, run is still the recommended approach
+handler :reload_nginx do
+  run "systemctl reload nginx", sudo: true
+end
+
+# In tasks, prefer command resource instead
 task :example do
-  # Simple command
-  run "echo 'Hello, World!'"
-  
-  # Command with options
-  run "apt-get update", sudo: true
-  
-  # Long-running command with extended timeout
-  run "mix test --slowest 10", timeout: 600_000
-  
-  # Retry on failure
-  run "flaky-command.sh", retries: 3, retry_delay: 5_000
+  command "echo 'Hello, World!'"
+  command "apt-get update", sudo: true
 end
 ```
 
@@ -676,6 +936,250 @@ task :check_exit_codes do
   run "false"     # Failure (false returns exit code 1)
   run "true"      # Success (true returns exit code 0)
 end
+```
+
+---
+
+## Tailscale Host Discovery
+
+Nexus can automatically discover hosts from your Tailscale network using ACL tags.
+
+### Syntax
+
+```elixir
+tailscale_hosts tag: "tag_name", as: :group_name, options
+```
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `tag` | `String.t()` | **required** | Tailscale ACL tag to filter by (without "tag:" prefix) |
+| `as` | `atom()` | **required** | Group name to assign discovered hosts to |
+| `user` | `String.t()` | `nil` | SSH user for all discovered hosts |
+| `online_only` | `boolean()` | `true` | Only include online peers |
+
+### Requirements
+
+- Tailscale must be installed and running on the local machine
+- The `tailscale` CLI must be in PATH
+- Hosts must have ACL tags configured in Tailscale admin console
+
+### Examples
+
+```elixir
+# Discover all hosts with tag:webserver and add them to :web group
+tailscale_hosts tag: "webserver", as: :web
+
+# Discover database hosts with a specific SSH user
+tailscale_hosts tag: "database", as: :db, user: "postgres"
+
+# Include offline hosts too
+tailscale_hosts tag: "all-servers", as: :fleet, online_only: false
+
+# Use discovered groups in tasks
+task :deploy, on: :web do
+  command "deploy.sh"
+end
+
+task :backup, on: :db do
+  command "pg_dump myapp > /backups/dump.sql"
+end
+```
+
+### How It Works
+
+1. Nexus runs `tailscale status --json` to get connected peers
+2. Filters peers by the specified ACL tag
+3. Creates a `Host` struct for each matching peer (using DNS name or Tailscale IP)
+4. Adds all hosts to a group with the specified name
+
+---
+
+## Facts
+
+Facts are automatically gathered system information about hosts. Use them for conditional logic based on OS, architecture, or other host properties.
+
+### Available Facts
+
+| Fact | Type | Description |
+|------|------|-------------|
+| `:os` | `atom()` | Operating system (`:linux`, `:darwin`, `:freebsd`) |
+| `:os_family` | `atom()` | OS family (`:debian`, `:rhel`, `:arch`, `:alpine`, `:darwin`) |
+| `:os_version` | `String.t()` | OS version (e.g., `"22.04"`, `"14.0"`) |
+| `:hostname` | `String.t()` | Short hostname |
+| `:fqdn` | `String.t()` | Fully qualified domain name |
+| `:cpu_count` | `pos_integer()` | Number of CPU cores |
+| `:memory_mb` | `non_neg_integer()` | Total memory in MB |
+| `:arch` | `atom()` | CPU architecture (`:x86_64`, `:aarch64`, `:arm`) |
+| `:kernel_version` | `String.t()` | Kernel version string |
+| `:user` | `String.t()` | Current SSH user |
+
+### Usage
+
+```elixir
+task :install_packages, on: :webservers do
+  # Facts are available via the facts() function
+  # Use conditional resources based on OS family
+  
+  # Debian/Ubuntu
+  command "apt-get update && apt-get install -y nginx",
+    onlyif: "test $(cat /etc/os-release | grep -c 'ID=ubuntu\\|ID=debian') -gt 0",
+    sudo: true
+
+  # RHEL/CentOS
+  command "yum install -y nginx",
+    onlyif: "test -f /etc/redhat-release",
+    sudo: true
+end
+
+# Or use the package resource which auto-detects the package manager
+task :install, on: :webservers do
+  package "nginx"  # Uses apt, yum, or pacman automatically
+end
+```
+
+### Gathering Facts
+
+Facts are gathered lazily on first access per host and cached for the pipeline run.
+
+```elixir
+# Local facts (no SSH required)
+{:ok, facts} = Nexus.Facts.Gatherer.gather_local()
+# => %{os: :darwin, os_family: :darwin, cpu_count: 10, memory_mb: 32768, ...}
+```
+
+---
+
+## Secrets
+
+Nexus provides encrypted secret storage using AES-256-GCM. Secrets are stored in `~/.nexus/secrets.enc`.
+
+### CLI Commands
+
+```bash
+# Initialize the secrets vault (first time only)
+nexus secret init
+
+# Set a secret
+nexus secret set API_KEY sk-1234567890
+
+# Get a secret
+nexus secret get API_KEY
+
+# List all secrets
+nexus secret list
+
+# Delete a secret
+nexus secret delete API_KEY
+```
+
+### Using Secrets in Configuration
+
+```elixir
+# Access secrets via the secret() function
+config :nexus,
+  default_user: "deploy"
+
+task :deploy, on: :webservers do
+  # Secrets are retrieved at parse time
+  command "curl -H 'Authorization: Bearer #{secret("API_KEY")}' https://api.example.com/deploy"
+  
+  # For runtime secrets, use environment variables
+  command "deploy.sh",
+    env: %{"API_KEY" => secret("API_KEY")}
+end
+```
+
+### Security
+
+- Secrets are encrypted with AES-256-GCM (authenticated encryption)
+- Unique 12-byte IV for each encryption operation
+- 16-byte authentication tag prevents tampering
+- Master key derived from passphrase using PBKDF2-HMAC-SHA256 (100k iterations)
+- Secrets file has restricted permissions (0600)
+
+---
+
+## Notifications
+
+Send notifications to Slack, Discord, Microsoft Teams, or generic webhooks after pipeline completion.
+
+### Syntax
+
+```elixir
+notify :name, options
+```
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `url` | `String.t()` | **required** | Webhook URL |
+| `on` | `:success \| :failure \| :always` | `:always` | When to send |
+| `template` | `:slack \| :discord \| :teams \| :generic` | `:generic` | Message format |
+| `headers` | `map()` | `%{}` | Additional HTTP headers |
+
+### Examples
+
+```elixir
+# Slack notification on failure
+notify :slack_alerts,
+  url: env("SLACK_WEBHOOK_URL"),
+  on: :failure,
+  template: :slack
+
+# Discord notification always
+notify :discord_deploys,
+  url: env("DISCORD_WEBHOOK_URL"),
+  on: :always,
+  template: :discord
+
+# Microsoft Teams
+notify :teams_channel,
+  url: env("TEAMS_WEBHOOK_URL"),
+  on: :success,
+  template: :teams
+
+# Generic JSON webhook with custom headers
+notify :custom_webhook,
+  url: "https://api.example.com/webhooks/deploy",
+  on: :always,
+  template: :generic,
+  headers: %{"X-API-Key" => secret("WEBHOOK_API_KEY")}
+```
+
+### Message Templates
+
+#### Slack
+```json
+{
+  "attachments": [{
+    "color": "#36a64f",
+    "title": "Pipeline Succeeded",
+    "fields": [
+      {"title": "Duration", "value": "45s", "short": true},
+      {"title": "Tasks", "value": "5", "short": true}
+    ],
+    "footer": "Nexus",
+    "ts": 1234567890
+  }]
+}
+```
+
+#### Discord
+```json
+{
+  "embeds": [{
+    "title": "Pipeline Succeeded",
+    "color": 3066993,
+    "fields": [
+      {"name": "Duration", "value": "45s", "inline": true},
+      {"name": "Tasks", "value": "5", "inline": true}
+    ],
+    "footer": {"text": "Nexus"}
+  }]
+}
 ```
 
 ---
