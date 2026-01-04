@@ -84,7 +84,7 @@ defmodule Nexus.DSL.Parser do
     ]
 
     # Evaluate the DSL using a custom environment
-    {result, _bindings} = Code.eval_string(wrap_dsl(content), bindings, file: file)
+    {result, _bindings} = Code.eval_string(wrap_dsl(content, file), bindings, file: file)
 
     case result do
       %Config{} = config ->
@@ -99,13 +99,15 @@ defmodule Nexus.DSL.Parser do
   end
 
   # Wraps the DSL content in a module that provides the DSL functions
-  defp wrap_dsl(content) do
+  defp wrap_dsl(content, file) do
     # Ensure we have a valid expression even for empty content
     body = if String.trim(content) == "", do: ":ok", else: content
+    # Get the directory containing the config file for relative imports
+    base_path = if file == "nofile", do: File.cwd!(), else: Path.dirname(Path.expand(file))
 
     """
     import Nexus.DSL.Parser.DSL
-    Nexus.DSL.Parser.DSL.run_dsl(fn ->
+    Nexus.DSL.Parser.DSL.run_dsl(#{inspect(base_path)}, fn ->
     #{body}
     end)
     """
@@ -144,13 +146,13 @@ defmodule Nexus.DSL.Parser.DSL do
   }
 
   @doc false
-  def run_dsl(fun) do
+  def run_dsl(base_path, fun) do
     # Initialize process dictionary for state
     Process.put(:nexus_config, Config.new())
     Process.put(:nexus_current_task, nil)
     Process.put(:nexus_current_handler, nil)
     Process.put(:nexus_import_chain, MapSet.new())
-    Process.put(:nexus_base_path, File.cwd!())
+    Process.put(:nexus_base_path, base_path)
 
     # Execute the DSL
     fun.()
@@ -161,12 +163,20 @@ defmodule Nexus.DSL.Parser.DSL do
 
   @doc false
   def run_dsl_with_context(fun, base_path, import_chain) do
+    # Save current context to restore after import
+    old_base_path = Process.get(:nexus_base_path)
+    old_import_chain = Process.get(:nexus_import_chain)
+
     # Store context for nested imports
     Process.put(:nexus_base_path, base_path)
     Process.put(:nexus_import_chain, import_chain)
 
     # Execute the DSL
     fun.()
+
+    # Restore previous context
+    Process.put(:nexus_base_path, old_base_path)
+    Process.put(:nexus_import_chain, old_import_chain)
   end
 
   @doc """

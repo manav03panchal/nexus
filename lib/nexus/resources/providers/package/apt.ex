@@ -121,6 +121,11 @@ defmodule Nexus.Resources.Providers.Package.Apt do
     }
   end
 
+  # :present is an alias for :installed
+  defp compute_package_diff(name, :present, desired_version, current) do
+    compute_package_diff(name, :installed, desired_version, current)
+  end
+
   defp compute_package_diff(name, :latest, _desired_version, %{installed: true} = current) do
     %{
       changed: true,
@@ -176,7 +181,8 @@ defmodule Nexus.Resources.Providers.Package.Apt do
     end
   end
 
-  defp do_apply(%Package{state: :installed, name: name, update_cache: update_cache}, conn) do
+  defp do_apply(%Package{state: state, name: name, update_cache: update_cache}, conn)
+       when state in [:installed, :present] do
     if update_cache do
       exec(conn, "apt-get update -qq", sudo: true)
     end

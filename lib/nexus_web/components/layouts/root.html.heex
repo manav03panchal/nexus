@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-gray-900">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="csrf-token" content={get_csrf_token()} />
+    <title>Nexus Dashboard</title>
+    <link phx-track-static rel="stylesheet" href={"/assets/app.css?v=#{:erlang.system_time()}"} />
+    <script
+      defer
+      phx-track-static
+      type="text/javascript"
+      src={"/assets/app.js?v=#{:erlang.system_time()}"}
+    >
+    </script>
+  </head>
+  <body class="h-full antialiased">
+    {@inner_content}
+  </body>
+</html>

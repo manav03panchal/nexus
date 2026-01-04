@@ -84,6 +84,16 @@ defmodule Nexus.MixProject do
       {:hammer, "~> 6.2"},
       {:burrito, "~> 1.0"},
 
+      # Web Dashboard
+      {:phoenix, "~> 1.7"},
+      {:phoenix_html, "~> 4.0"},
+      {:phoenix_live_view, "~> 1.0"},
+      {:bandit, "~> 1.0"},
+      {:tailwind, "~> 0.2", runtime: Mix.env() == :dev},
+      {:esbuild, "~> 0.8", runtime: Mix.env() == :dev},
+      {:heroicons, "~> 0.5",
+       github: "tailwindlabs/heroicons", sparse: "optimized", app: false, compile: false, depth: 1},
+
       # Dev & Test
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
@@ -99,13 +109,20 @@ defmodule Nexus.MixProject do
 
   defp aliases do
     [
-      setup: ["deps.get", "deps.compile"],
+      setup: ["deps.get", "deps.compile", "assets.setup"],
       lint: ["format --check-formatted", "credo --strict", "sobelow --config"],
       "test.unit": ["test --only unit"],
       "test.integration": ["test --only integration"],
       "test.property": ["test --only property"],
       "test.all": ["test --include integration --include property"],
-      quality: ["format", "credo --strict", "dialyzer", "sobelow --config"]
+      quality: ["format", "credo --strict", "dialyzer", "sobelow --config"],
+      "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
+      "assets.build": ["tailwind nexus_web", "esbuild nexus_web"],
+      "assets.deploy": [
+        "tailwind nexus_web --minify",
+        "esbuild nexus_web --minify",
+        "phx.digest"
+      ]
     ]
   end
 

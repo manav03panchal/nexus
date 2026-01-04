@@ -23,7 +23,7 @@ defmodule Nexus.CLI do
 
   """
 
-  alias Nexus.CLI.{Init, List, Preflight, Run, Secret, Validate}
+  alias Nexus.CLI.{Init, List, Preflight, Run, Secret, Validate, Web}
 
   @version Mix.Project.config()[:version] || "0.1.0"
 
@@ -362,6 +362,42 @@ defmodule Nexus.CLI do
         version: [
           name: "version",
           about: "Show Nexus version information"
+        ],
+        web: [
+          name: "web",
+          about: "Start the web dashboard for interactive DAG visualization",
+          options: [
+            config: [
+              value_name: "FILE",
+              short: "-c",
+              long: "--config",
+              help: "Path to nexus.exs config file",
+              parser: :string,
+              default: "nexus.exs"
+            ],
+            port: [
+              value_name: "PORT",
+              short: "-p",
+              long: "--port",
+              help: "HTTP port to listen on",
+              parser: :integer,
+              default: 4000
+            ],
+            host: [
+              value_name: "HOST",
+              long: "--host",
+              help: "Host to bind to",
+              parser: :string,
+              default: "127.0.0.1"
+            ]
+          ],
+          flags: [
+            open: [
+              short: "-o",
+              long: "--open",
+              help: "Open browser automatically"
+            ]
+          ]
         ]
       ]
     )
@@ -465,6 +501,10 @@ defmodule Nexus.CLI do
   defp execute({:ok, [:version], _parsed}) do
     IO.puts("nexus #{@version}")
     {:ok, 0}
+  end
+
+  defp execute({:ok, [:web], parsed}) do
+    Web.execute(parsed)
   end
 
   defp print_subcommand_help(subcmd) do

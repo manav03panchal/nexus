@@ -22,7 +22,7 @@ defmodule Nexus.Executor.Pipeline do
   alias Nexus.DAG
   alias Nexus.Executor.TaskRunner
   alias Nexus.Telemetry
-  alias Nexus.Types.Config
+  alias Nexus.Types.{Config, Handler}
   alias Nexus.Types.Task, as: NexusTask
 
   @type pipeline_result :: %{
@@ -178,7 +178,8 @@ defmodule Nexus.Executor.Pipeline do
       task_results: [],
       tasks_succeeded: 0,
       tasks_failed: 0,
-      aborted_at: nil
+      aborted_at: nil,
+      triggered_handlers: MapSet.new()
     }
 
     final_state =
@@ -189,11 +190,18 @@ defmodule Nexus.Executor.Pipeline do
         succeeded = Enum.count(phase_results, &(&1.status == :ok))
         failed = length(phase_results) - succeeded
 
+        # Collect triggered handlers from this phase
+        phase_handlers =
+          phase_results
+          |> Enum.flat_map(&Map.get(&1, :triggered_handlers, []))
+          |> MapSet.new()
+
         new_state = %{
           state
           | task_results: state.task_results ++ phase_results,
             tasks_succeeded: state.tasks_succeeded + succeeded,
-            tasks_failed: state.tasks_failed + failed
+            tasks_failed: state.tasks_failed + failed,
+            triggered_handlers: MapSet.union(state.triggered_handlers, phase_handlers)
         }
 
         if failed > 0 and not continue_on_error do
@@ -209,8 +217,14 @@ defmodule Nexus.Executor.Pipeline do
         end
       end)
 
+    # Execute triggered handlers after all tasks complete
+    {handler_results, handler_succeeded, handler_failed} =
+      execute_triggered_handlers(config, final_state.triggered_handlers, opts)
+
     duration = System.monotonic_time(:millisecond) - start_time
-    overall_status = if final_state.tasks_failed > 0, do: :error, else: :ok
+
+    total_failed = final_state.tasks_failed + handler_failed
+    overall_status = if total_failed > 0, do: :error, else: :ok
 
     result = %{
       status: overall_status,
@@ -219,6 +233,9 @@ defmodule Nexus.Executor.Pipeline do
       tasks_succeeded: final_state.tasks_succeeded,
       tasks_failed: final_state.tasks_failed,
       task_results: final_state.task_results,
+      handler_results: handler_results,
+      handlers_succeeded: handler_succeeded,
+      handlers_failed: handler_failed,
       aborted_at: final_state.aborted_at
     }
 
@@ -269,5 +286,84 @@ defmodule Nexus.Executor.Pipeline do
       {:ok, hosts} -> hosts
       {:error, _} -> []
     end
+  end
+
+  # Execute triggered handlers after all tasks complete
+  defp execute_triggered_handlers(_config, handlers, _opts) when handlers == %MapSet{} do
+    {[], 0, 0}
+  end
+
+  defp execute_triggered_handlers(config, handler_names, opts) do
+    if MapSet.size(handler_names) == 0 do
+      {[], 0, 0}
+    else
+      results =
+        handler_names
+        |> MapSet.to_list()
+        |> Enum.map(fn handler_name ->
+          execute_handler(config, handler_name, opts)
+        end)
+
+      succeeded = Enum.count(results, &(&1.status == :ok))
+      failed = length(results) - succeeded
+
+      {results, succeeded, failed}
+    end
+  end
+
+  defp execute_handler(%Config{} = config, handler_name, opts) do
+    case Map.get(config.handlers, handler_name) do
+      nil ->
+        %{
+          handler: handler_name,
+          status: :error,
+          error: :handler_not_found,
+          duration_ms: 0,
+          host_results: []
+        }
+
+      %Handler{} = handler ->
+        # Create a synthetic task to run the handler commands
+        # Handlers run on all hosts by default (could be improved to track which hosts triggered)
+        all_hosts = Map.values(config.hosts)
+        run_handler_on_hosts(handler, all_hosts, opts)
+    end
+  end
+
+  defp run_handler_on_hosts(%Handler{} = handler, hosts, opts) do
+    start_time = System.monotonic_time(:millisecond)
+
+    # Create a synthetic task from the handler
+    handler_task = %NexusTask{
+      name: handler.name,
+      on: :all,
+      commands: handler.commands,
+      strategy: :parallel,
+      timeout: 300_000
+    }
+
+    result =
+      case TaskRunner.run(handler_task, hosts, opts) do
+        {:ok, task_result} ->
+          %{
+            handler: handler.name,
+            status: task_result.status,
+            duration_ms: task_result.duration_ms,
+            host_results: task_result.host_results
+          }
+
+        {:error, reason} ->
+          duration = System.monotonic_time(:millisecond) - start_time
+
+          %{
+            handler: handler.name,
+            status: :error,
+            error: reason,
+            duration_ms: duration,
+            host_results: []
+          }
+      end
+
+    result
   end
 end

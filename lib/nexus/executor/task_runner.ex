@@ -222,7 +222,7 @@ defmodule Nexus.Executor.TaskRunner do
 
     case Pool.checkout(
            host,
-           &run_commands_remotely(&1, task.commands, continue_on_error),
+           &run_commands_remotely(&1, task.commands, continue_on_error, host.name),
            pool_opts
          ) do
       {:ok, command_results} ->
@@ -235,17 +235,17 @@ defmodule Nexus.Executor.TaskRunner do
   end
 
   defp run_commands_locally(commands, continue_on_error) do
-    run_commands(commands, continue_on_error, :local, nil)
+    run_commands(commands, continue_on_error, :local, nil, :local)
   end
 
-  defp run_commands_remotely(conn, commands, continue_on_error) do
-    run_commands(commands, continue_on_error, :remote, conn)
+  defp run_commands_remotely(conn, commands, continue_on_error, host_name) do
+    run_commands(commands, continue_on_error, :remote, conn, host_name)
   end
 
-  defp run_commands(commands, continue_on_error, mode, conn) do
+  defp run_commands(commands, continue_on_error, mode, conn, host_name) do
     {results, _} =
       Enum.reduce_while(commands, {[], :continue}, fn cmd, {acc, _} ->
-        result = execute_command(cmd, mode, conn)
+        result = execute_command(cmd, mode, conn, host_name)
 
         if result.status == :error and not continue_on_error do
           {:halt, {[result | acc], :stopped}}
@@ -258,80 +258,77 @@ defmodule Nexus.Executor.TaskRunner do
   end
 
   # Dispatch to appropriate executor based on command type
-  defp execute_command(%Command{} = cmd, mode, conn) do
+  defp execute_command(%Command{} = cmd, mode, conn, host_name) do
     executor =
       if mode == :local, do: &execute_local_command/1, else: &execute_remote_command(&1, conn)
 
-    execute_with_retry(cmd, executor)
+    execute_with_retry(cmd, executor, 1, host_name)
   end
 
-  defp execute_command(%ResourceCommand{} = cmd, mode, conn) do
+  defp execute_command(%ResourceCommand{} = cmd, mode, conn, host_name) do
     executor =
       if mode == :local, do: &execute_local_command/1, else: &execute_remote_command(&1, conn)
 
-    execute_with_retry(cmd, executor)
+    execute_with_retry(cmd, executor, host_name)
   end
 
-  defp execute_command(%Upload{} = upload, mode, conn) do
-    execute_upload(upload, mode, conn)
+  defp execute_command(%Upload{} = upload, mode, conn, host_name) do
+    execute_upload(upload, mode, conn, host_name)
   end
 
-  defp execute_command(%Download{} = download, mode, conn) do
-    execute_download(download, mode, conn)
+  defp execute_command(%Download{} = download, mode, conn, host_name) do
+    execute_download(download, mode, conn, host_name)
   end
 
-  defp execute_command(%Template{} = template, mode, conn) do
-    execute_template(template, mode, conn)
+  defp execute_command(%Template{} = template, mode, conn, host_name) do
+    execute_template(template, mode, conn, host_name)
   end
 
-  defp execute_command(%WaitFor{} = wait_for, mode, conn) do
-    execute_wait_for(wait_for, mode, conn)
+  defp execute_command(%WaitFor{} = wait_for, mode, conn, host_name) do
+    execute_wait_for(wait_for, mode, conn, host_name)
   end
 
   # Resource types - delegate to Resources.Executor
-  defp execute_command(%Package{} = resource, mode, conn) do
-    execute_resource(resource, mode, conn)
+  defp execute_command(%Package{} = resource, mode, conn, host_name) do
+    execute_resource(resource, mode, conn, host_name)
   end
 
-  defp execute_command(%Service{} = resource, mode, conn) do
-    execute_resource(resource, mode, conn)
+  defp execute_command(%Service{} = resource, mode, conn, host_name) do
+    execute_resource(resource, mode, conn, host_name)
   end
 
-  defp execute_command(%FileResource{} = resource, mode, conn) do
-    execute_resource(resource, mode, conn)
+  defp execute_command(%FileResource{} = resource, mode, conn, host_name) do
+    execute_resource(resource, mode, conn, host_name)
   end
 
-  defp execute_command(%Directory{} = resource, mode, conn) do
-    execute_resource(resource, mode, conn)
+  defp execute_command(%Directory{} = resource, mode, conn, host_name) do
+    execute_resource(resource, mode, conn, host_name)
   end
 
-  defp execute_command(%User{} = resource, mode, conn) do
-    execute_resource(resource, mode, conn)
+  defp execute_command(%User{} = resource, mode, conn, host_name) do
+    execute_resource(resource, mode, conn, host_name)
   end
 
-  defp execute_command(%Group{} = resource, mode, conn) do
-    execute_resource(resource, mode, conn)
-  end
-
-  defp execute_with_retry(%Command{} = cmd, executor) do
-    execute_with_retry(cmd, executor, 1, :local)
+  defp execute_command(%Group{} = resource, mode, conn, host_name) do
+    execute_resource(resource, mode, conn, host_name)
   end
 
   # Handle Resources.Types.Command with idempotency guards
-  defp execute_with_retry(%ResourceCommand{} = cmd, executor) do
+  defp execute_with_retry(%ResourceCommand{} = cmd, executor, host_name) do
     start_time = System.monotonic_time(:millisecond)
-    Telemetry.emit_command_start(cmd.cmd, :local)
+    Telemetry.emit_command_start(cmd.cmd, host_name)
 
     # Check idempotency guards first
     case check_idempotency_guards(cmd, executor) do
       {:skip, reason} ->
         duration = System.monotonic_time(:millisecond) - start_time
-        Telemetry.emit_command_stop(cmd.cmd, duration, 0)
+        skip_output = "(skipped: #{reason})"
+        Telemetry.emit_command_stop(cmd.cmd, duration, 0, skip_output, host_name)
 
         %{
           cmd: cmd.cmd,
           status: :ok,
-          output: "(skipped: #{reason})",
+          output: skip_output,
           exit_code: 0,
           attempts: 0,
           duration_ms: duration,
@@ -358,7 +355,7 @@ defmodule Nexus.Executor.TaskRunner do
 
         case result do
           {:ok, output, 0} ->
-            Telemetry.emit_command_stop(cmd.cmd, duration, 0)
+            Telemetry.emit_command_stop(cmd.cmd, duration, 0, output, host_name)
 
             base_result = %{
               cmd: cmd.cmd,
@@ -373,7 +370,7 @@ defmodule Nexus.Executor.TaskRunner do
             if cmd.notify, do: Map.put(base_result, :notify, cmd.notify), else: base_result
 
           {:ok, output, exit_code} ->
-            Telemetry.emit_command_stop(cmd.cmd, duration, exit_code)
+            Telemetry.emit_command_stop(cmd.cmd, duration, exit_code, output, host_name)
 
             %{
               cmd: cmd.cmd,
@@ -385,12 +382,13 @@ defmodule Nexus.Executor.TaskRunner do
             }
 
           {:error, reason} ->
-            Telemetry.emit_command_stop(cmd.cmd, duration, -1)
+            error_output = inspect(reason)
+            Telemetry.emit_command_stop(cmd.cmd, duration, -1, error_output, host_name)
 
             %{
               cmd: cmd.cmd,
               status: :error,
-              output: inspect(reason),
+              output: error_output,
               exit_code: -1,
               attempts: 1,
               duration_ms: duration
@@ -506,7 +504,7 @@ defmodule Nexus.Executor.TaskRunner do
 
     case result do
       {:ok, output, 0} ->
-        Telemetry.emit_command_stop(cmd.cmd, duration, 0)
+        Telemetry.emit_command_stop(cmd.cmd, duration, 0, output)
 
         %{
           cmd: cmd.cmd,
@@ -522,7 +520,7 @@ defmodule Nexus.Executor.TaskRunner do
           Process.sleep(calculate_retry_delay(cmd.retry_delay, attempt))
           execute_with_retry(cmd, executor, attempt + 1, host)
         else
-          Telemetry.emit_command_stop(cmd.cmd, duration, exit_code)
+          Telemetry.emit_command_stop(cmd.cmd, duration, exit_code, output)
 
           %{
             cmd: cmd.cmd,
@@ -539,12 +537,13 @@ defmodule Nexus.Executor.TaskRunner do
           Process.sleep(calculate_retry_delay(cmd.retry_delay, attempt))
           execute_with_retry(cmd, executor, attempt + 1, host)
         else
-          Telemetry.emit_command_stop(cmd.cmd, duration, -1)
+          error_output = inspect(reason)
+          Telemetry.emit_command_stop(cmd.cmd, duration, -1, error_output)
 
           %{
             cmd: cmd.cmd,
             status: :error,
-            output: inspect(reason),
+            output: error_output,
             exit_code: -1,
             attempts: attempt,
             duration_ms: duration
@@ -615,7 +614,7 @@ defmodule Nexus.Executor.TaskRunner do
   # Upload execution
   # ============================================================================
 
-  defp execute_upload(%Upload{} = upload, :local, _conn) do
+  defp execute_upload(%Upload{} = upload, :local, _conn, _host_name) do
     # Local upload is just a file copy
     start_time = System.monotonic_time(:millisecond)
     cmd_desc = "upload #{upload.local_path} -> #{upload.remote_path}"
@@ -638,10 +637,10 @@ defmodule Nexus.Executor.TaskRunner do
     build_file_op_result(cmd_desc, result, duration, upload.notify)
   end
 
-  defp execute_upload(%Upload{} = upload, :remote, conn) do
+  defp execute_upload(%Upload{} = upload, :remote, conn, host_name) do
     start_time = System.monotonic_time(:millisecond)
     cmd_desc = "upload #{upload.local_path} -> #{upload.remote_path}"
-    Telemetry.emit_command_start(cmd_desc, :remote)
+    Telemetry.emit_command_start(cmd_desc, host_name)
 
     result =
       SFTP.upload(conn, upload.local_path, upload.remote_path,
@@ -653,11 +652,11 @@ defmodule Nexus.Executor.TaskRunner do
 
     case result do
       :ok ->
-        Telemetry.emit_command_stop(cmd_desc, duration, 0)
+        Telemetry.emit_command_stop(cmd_desc, duration, 0, "uploaded")
         build_file_op_result(cmd_desc, {:ok, "uploaded"}, duration, upload.notify)
 
       {:error, reason} ->
-        Telemetry.emit_command_stop(cmd_desc, duration, 1)
+        Telemetry.emit_command_stop(cmd_desc, duration, 1, inspect(reason))
         build_file_op_result(cmd_desc, {:error, reason}, duration, nil)
     end
   end
@@ -666,7 +665,7 @@ defmodule Nexus.Executor.TaskRunner do
   # Download execution
   # ============================================================================
 
-  defp execute_download(%Download{} = download, :local, _conn) do
+  defp execute_download(%Download{} = download, :local, _conn, _host_name) do
     # Local download is just a file copy (reverse direction)
     start_time = System.monotonic_time(:millisecond)
     cmd_desc = "download #{download.remote_path} -> #{download.local_path}"
@@ -682,10 +681,10 @@ defmodule Nexus.Executor.TaskRunner do
     build_file_op_result(cmd_desc, result, duration, nil)
   end
 
-  defp execute_download(%Download{} = download, :remote, conn) do
+  defp execute_download(%Download{} = download, :remote, conn, host_name) do
     start_time = System.monotonic_time(:millisecond)
     cmd_desc = "download #{download.remote_path} -> #{download.local_path}"
-    Telemetry.emit_command_start(cmd_desc, :remote)
+    Telemetry.emit_command_start(cmd_desc, host_name)
 
     result = SFTP.download(conn, download.remote_path, download.local_path, sudo: download.sudo)
 
@@ -693,11 +692,11 @@ defmodule Nexus.Executor.TaskRunner do
 
     case result do
       :ok ->
-        Telemetry.emit_command_stop(cmd_desc, duration, 0)
+        Telemetry.emit_command_stop(cmd_desc, duration, 0, "downloaded")
         build_file_op_result(cmd_desc, {:ok, "downloaded"}, duration, nil)
 
       {:error, reason} ->
-        Telemetry.emit_command_stop(cmd_desc, duration, 1)
+        Telemetry.emit_command_stop(cmd_desc, duration, 1, inspect(reason))
         build_file_op_result(cmd_desc, {:error, reason}, duration, nil)
     end
   end
@@ -706,10 +705,10 @@ defmodule Nexus.Executor.TaskRunner do
   # Template execution
   # ============================================================================
 
-  defp execute_template(%Template{} = template, mode, conn) do
+  defp execute_template(%Template{} = template, mode, conn, host_name) do
     start_time = System.monotonic_time(:millisecond)
     cmd_desc = "template #{template.source} -> #{template.destination}"
-    Telemetry.emit_command_start(cmd_desc, mode)
+    Telemetry.emit_command_start(cmd_desc, host_name)
 
     # Read and render template
     result =
@@ -747,11 +746,11 @@ defmodule Nexus.Executor.TaskRunner do
 
     case result do
       :ok ->
-        Telemetry.emit_command_stop(cmd_desc, duration, 0)
+        Telemetry.emit_command_stop(cmd_desc, duration, 0, "rendered and uploaded")
         build_file_op_result(cmd_desc, {:ok, "rendered and uploaded"}, duration, template.notify)
 
       {:error, reason} ->
-        Telemetry.emit_command_stop(cmd_desc, duration, 1)
+        Telemetry.emit_command_stop(cmd_desc, duration, 1, inspect(reason))
         build_file_op_result(cmd_desc, {:error, reason}, duration, nil)
     end
   end
@@ -771,18 +770,19 @@ defmodule Nexus.Executor.TaskRunner do
   # WaitFor execution
   # ============================================================================
 
-  defp execute_wait_for(%WaitFor{} = wait_for, mode, conn) do
+  defp execute_wait_for(%WaitFor{} = wait_for, mode, conn, host_name) do
     start_time = System.monotonic_time(:millisecond)
     cmd_desc = "wait_for #{wait_for.type} #{wait_for.target}"
-    Telemetry.emit_command_start(cmd_desc, mode)
+    Telemetry.emit_command_start(cmd_desc, host_name)
 
     result = do_wait_for(wait_for, mode, conn, start_time)
 
     duration = System.monotonic_time(:millisecond) - start_time
-    Telemetry.emit_command_stop(cmd_desc, duration, if(result == :ok, do: 0, else: 1))
 
     case result do
       :ok ->
+        Telemetry.emit_command_stop(cmd_desc, duration, 0, "condition met")
+
         %{
           cmd: cmd_desc,
           status: :ok,
@@ -793,6 +793,8 @@ defmodule Nexus.Executor.TaskRunner do
         }
 
       {:error, :timeout} ->
+        Telemetry.emit_command_stop(cmd_desc, duration, 1, "timeout waiting for condition")
+
         %{
           cmd: cmd_desc,
           status: :error,
@@ -803,6 +805,8 @@ defmodule Nexus.Executor.TaskRunner do
         }
 
       {:error, reason} ->
+        Telemetry.emit_command_stop(cmd_desc, duration, 1, inspect(reason))
+
         %{
           cmd: cmd_desc,
           status: :error,
@@ -932,10 +936,10 @@ defmodule Nexus.Executor.TaskRunner do
   # Resource execution (Package, Service, File, Directory, User, Group)
   # ============================================================================
 
-  defp execute_resource(resource, mode, conn) do
+  defp execute_resource(resource, mode, conn, host_name) do
     start_time = System.monotonic_time(:millisecond)
     resource_desc = describe_resource(resource)
-    Telemetry.emit_command_start(resource_desc, mode)
+    Telemetry.emit_command_start(resource_desc, host_name)
 
     # Build context with facts - need to detect OS
     context = build_resource_context(mode, conn)
@@ -944,11 +948,13 @@ defmodule Nexus.Executor.TaskRunner do
     {:ok, result} = ResourceExecutor.execute(resource, conn, context)
 
     duration = System.monotonic_time(:millisecond) - start_time
+    output = result.message || status_to_message(result.status)
 
     Telemetry.emit_command_stop(
       resource_desc,
       duration,
-      if(result.status in [:ok, :changed], do: 0, else: 1)
+      if(result.status in [:ok, :changed], do: 0, else: 1),
+      output
     )
 
     # Convert Resources.Result to command_result format

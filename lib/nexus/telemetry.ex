@@ -206,12 +206,12 @@ defmodule Nexus.Telemetry do
   @doc """
   Emits a command stop event.
   """
-  @spec emit_command_stop(String.t(), integer(), integer()) :: :ok
-  def emit_command_stop(command, duration, exit_code) do
+  @spec emit_command_stop(String.t(), integer(), integer(), String.t(), atom()) :: :ok
+  def emit_command_stop(command, duration, exit_code, output \\ "", host \\ :local) do
     :telemetry.execute(
       [:nexus, :command, :stop],
       %{duration: duration},
-      %{command: command, exit_code: exit_code}
+      %{command: command, exit_code: exit_code, output: output, host: host}
     )
   end
 
