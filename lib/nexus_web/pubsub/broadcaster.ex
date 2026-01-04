@@ -31,32 +31,33 @@ defmodule NexusWeb.Broadcaster do
         [:nexus, :task, :start],
         [:nexus, :task, :stop]
       ],
-      &handle_event/4,
+      &__MODULE__.handle_event/4,
       nil
     )
   end
 
-  defp handle_event([:nexus, :pipeline, :start], _measurements, metadata, _config) do
+  @doc false
+  def handle_event([:nexus, :pipeline, :start], _measurements, metadata, _config) do
     broadcast(:pipeline_started, %{
       tasks: metadata[:tasks] || []
     })
   end
 
-  defp handle_event([:nexus, :pipeline, :stop], measurements, metadata, _config) do
+  def handle_event([:nexus, :pipeline, :stop], measurements, metadata, _config) do
     broadcast(:pipeline_completed, %{
       duration_ms: measurements[:duration] || 0,
       success: is_nil(metadata[:error])
     })
   end
 
-  defp handle_event([:nexus, :task, :start], _measurements, metadata, _config) do
+  def handle_event([:nexus, :task, :start], _measurements, metadata, _config) do
     broadcast(:task_started, %{
       task: metadata[:task],
       host: metadata[:host]
     })
   end
 
-  defp handle_event([:nexus, :task, :stop], measurements, metadata, _config) do
+  def handle_event([:nexus, :task, :stop], measurements, metadata, _config) do
     broadcast(:task_completed, %{
       task: metadata[:task],
       host: metadata[:host],
