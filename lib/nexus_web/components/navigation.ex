@@ -15,12 +15,24 @@ defmodule NexusWeb.Navigation do
 
   def sidebar(assigns) do
     ~H"""
-    <nav class="w-56 bg-[#0a0a0a] border-r border-[#222] flex flex-col h-full shrink-0">
-      <!-- Logo -->
-      <div class="px-4 py-4 border-b border-[#222]">
-        <a href={~p"/"} class="flex items-center gap-2">
+    <nav
+      id="sidebar"
+      class="w-56 bg-[#0a0a0a] border-r border-[#222] flex flex-col h-full shrink-0 transition-all duration-200"
+    >
+      <!-- Logo & Toggle -->
+      <div class="h-12 flex items-center justify-between border-b border-[#222] px-3">
+        <a href={~p"/"} class="sidebar-logo">
           <img src="/assets/nexus-logo.png" class="h-5" alt="Nexus" />
         </a>
+        <button
+          type="button"
+          id="sidebar-toggle"
+          class="p-1.5 text-gray-500 hover:text-white hover:bg-[#1a1a1a] transition-colors"
+          title="Toggle sidebar"
+        >
+          <.icon name="hero-chevron-left" class="chevron-left h-4 w-4" />
+          <.icon name="hero-chevron-right" class="chevron-right h-4 w-4" />
+        </button>
       </div>
       
     <!-- Navigation Items -->
@@ -39,8 +51,8 @@ defmodule NexusWeb.Navigation do
       </div>
       
     <!-- Footer -->
-      <div class="px-4 py-3 border-t border-[#222] text-xs text-gray-500">
-        v{Application.spec(:nexus, :vsn) |> to_string()}
+      <div class="h-12 flex items-center border-t border-[#222] px-3 text-xs text-gray-500">
+        <span class="sidebar-version">v{Application.spec(:nexus, :vsn) |> to_string()}</span>
       </div>
     </nav>
     """
@@ -53,24 +65,25 @@ defmodule NexusWeb.Navigation do
   attr :current, :string, required: true
 
   defp nav_item(assigns) do
-    active = is_active?(assigns.path, assigns.current)
+    active = active?(assigns.path, assigns.current)
     assigns = assign(assigns, :active, active)
 
     ~H"""
     <a
       href={@path}
+      title={@label}
       class={[
-        "flex items-center gap-3 px-4 py-2 mx-2 text-sm font-medium transition-colors",
-        @active && "bg-[#00e599]/10 text-[#00e599] border-l-2 border-[#00e599] -ml-[2px] pl-[18px]",
+        "sidebar-nav-item flex items-center gap-3 px-3 py-2 mx-2 text-sm font-medium transition-colors",
+        @active && "bg-[#00e599]/10 text-[#00e599]",
         !@active && "text-gray-400 hover:text-white hover:bg-[#111]"
       ]}
     >
       <.icon name={@icon} class="h-4 w-4 shrink-0" />
-      <span>{@label}</span>
+      <span class="sidebar-label">{@label}</span>
     </a>
     """
   end
 
-  defp is_active?("/", current), do: current == "/" or String.starts_with?(current, "/task/")
-  defp is_active?(path, current), do: String.starts_with?(current, path)
+  defp active?("/", current), do: current == "/" or String.starts_with?(current, "/task/")
+  defp active?(path, current), do: String.starts_with?(current, path)
 end

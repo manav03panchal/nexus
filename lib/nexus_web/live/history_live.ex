@@ -28,8 +28,8 @@ defmodule NexusWeb.HistoryLive do
   def render(assigns) do
     ~H"""
     <div class="flex flex-col h-full bg-[#0a0a0a] text-gray-100">
-      <header class="bg-[#111] border-b border-[#222] px-6 py-3 shrink-0">
-        <div class="flex items-center justify-between">
+      <header class="bg-[#111] border-b border-[#222] px-4 h-12 flex items-center shrink-0">
+        <div class="flex items-center justify-between w-full">
           <div class="flex items-center gap-3">
             <span class="text-sm font-medium text-white">History</span>
             <span class="text-xs text-gray-500">

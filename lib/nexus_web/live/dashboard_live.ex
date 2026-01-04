@@ -311,129 +311,129 @@ defmodule NexusWeb.DashboardLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="flex flex-col h-full w-full bg-[#0a0a0a] text-gray-100">
-      <!-- Header -->
-      <header class="bg-[#111] border-b border-[#222] px-6 py-3 shrink-0">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <span class="text-sm font-medium text-white">Pipeline</span>
+    <div class="flex h-full bg-[#0a0a0a] text-gray-100">
+      <!-- Main Content -->
+      <div class="flex-1 flex flex-col overflow-hidden">
+        <!-- Header -->
+        <header class="bg-[#111] border-b border-[#222] px-4 py-2 h-12 flex items-center">
+          <div class="flex items-center justify-between w-full">
             <span class="text-xs text-gray-500">
               {if @config_file, do: Path.basename(@config_file), else: "No config loaded"}
             </span>
-          </div>
-          <div class="flex items-center gap-3">
-            <.button phx-click="reload_config" variant={:ghost} size={:sm}>
-              <.icon name="hero-arrow-path" class="h-4 w-4 mr-1" /> Reload
-            </.button>
-            <%= if @execution_session do %>
-              <.button phx-click="stop_execution" variant={:danger} size={:sm}>
-                <.icon name="hero-stop" class="h-4 w-4 mr-1" /> Stop
+            <div class="flex items-center gap-2">
+              <.button phx-click="reload_config" variant={:ghost} size={:sm}>
+                <.icon name="hero-arrow-path" class="h-4 w-4 mr-1" /> Reload
               </.button>
-            <% end %>
+              <%= if @execution_session do %>
+                <.button phx-click="stop_execution" variant={:danger} size={:sm}>
+                  <.icon name="hero-stop" class="h-4 w-4 mr-1" /> Stop
+                </.button>
+              <% end %>
+            </div>
           </div>
-        </div>
-      </header>
-      
+        </header>
+        
     <!-- Main content area -->
-      <div class="flex-1 flex flex-col min-h-0">
-        <!-- Top: DAG + Task Panel side by side -->
-        <div class="flex-1 flex min-h-0">
-          <!-- DAG View -->
-          <div id="dag-area" class="flex-1 relative min-h-0">
-            <%= if @error do %>
-              <div class="absolute inset-0 flex items-center justify-center">
-                <div class="bg-red-900/50 border border-red-500 p-6 max-w-md">
-                  <h3 class="text-red-300 font-semibold mb-2">Error Loading Configuration</h3>
-                  <p class="text-red-200 text-sm">{@error}</p>
-                </div>
-              </div>
-            <% else %>
-              <%= if @dag_data do %>
-                <div
-                  id="dag-container"
-                  phx-hook="DagGraph"
-                  phx-update="ignore"
-                  data-nodes={Jason.encode!(@dag_data.nodes)}
-                  data-edges={Jason.encode!(@dag_data.edges)}
-                  data-statuses={
-                    Jason.encode!(
-                      @task_statuses
-                      |> Enum.map(fn {k, v} -> {Atom.to_string(k), Atom.to_string(v)} end)
-                      |> Map.new()
-                    )
-                  }
-                  class="w-full h-full"
-                >
+        <div class="flex-1 flex flex-col overflow-hidden min-w-0">
+          <!-- Top: DAG + Task Panel side by side -->
+          <div class="flex-1 flex overflow-hidden min-w-0">
+            <!-- DAG View -->
+            <div id="dag-area" class="flex-1 relative min-w-0">
+              <%= if @error do %>
+                <div class="absolute inset-0 flex items-center justify-center">
+                  <div class="bg-red-900/50 border border-red-500 p-6 max-w-md">
+                    <h3 class="text-red-300 font-semibold mb-2">Error Loading Configuration</h3>
+                    <p class="text-red-200 text-sm">{@error}</p>
+                  </div>
                 </div>
               <% else %>
-                <div class="absolute inset-0 flex items-center justify-center">
-                  <.spinner class="h-8 w-8 text-[#00e599]" />
-                </div>
+                <%= if @dag_data do %>
+                  <div
+                    id="dag-container"
+                    phx-hook="DagGraph"
+                    phx-update="ignore"
+                    data-nodes={Jason.encode!(@dag_data.nodes)}
+                    data-edges={Jason.encode!(@dag_data.edges)}
+                    data-statuses={
+                      Jason.encode!(
+                        @task_statuses
+                        |> Enum.map(fn {k, v} -> {Atom.to_string(k), Atom.to_string(v)} end)
+                        |> Map.new()
+                      )
+                    }
+                    class="w-full h-full"
+                  >
+                  </div>
+                <% else %>
+                  <div class="absolute inset-0 flex items-center justify-center">
+                    <.spinner class="h-8 w-8 text-[#00e599]" />
+                  </div>
+                <% end %>
               <% end %>
-            <% end %>
+            </div>
+            
+    <!-- Task Panel -->
+            <div id="panel-area">
+              <%= if @selected_task && @config do %>
+                <.task_panel
+                  task={Map.get(@config.tasks, @selected_task)}
+                  task_name={@selected_task}
+                  status={Map.get(@task_statuses, @selected_task, :pending)}
+                  graph={@graph}
+                  executing={not is_nil(@execution_session)}
+                  host_statuses={@host_statuses}
+                />
+              <% end %>
+            </div>
           </div>
           
-    <!-- Task Panel -->
-          <div id="panel-area">
-            <%= if @selected_task && @config do %>
-              <.task_panel
-                task={Map.get(@config.tasks, @selected_task)}
-                task_name={@selected_task}
-                status={Map.get(@task_statuses, @selected_task, :pending)}
-                graph={@graph}
-                executing={not is_nil(@execution_session)}
-                host_statuses={@host_statuses}
-              />
-            <% end %>
-          </div>
-        </div>
-        
-    <!-- Log Panel (Expandable) - OUTSIDE dag-area to avoid phx-update="ignore" issues -->
-        <div
-          id="log-panel"
-          class="bg-[#0a0a0a] border-t border-[#222] flex flex-col flex-shrink-0 overflow-hidden"
-          data-expanded={to_string(@logs_expanded)}
-        >
-          <div class="flex items-center justify-between px-4 py-2 bg-[#111] h-12 flex-shrink-0">
-            <div class="flex items-center gap-2">
-              <button
-                type="button"
-                phx-click="toggle_logs"
-                class="p-1 hover:bg-[#1a1a1a] transition-colors"
-              >
-                <span class={[
-                  "block transition-transform duration-200",
-                  if(@logs_expanded, do: "rotate-180", else: "")
-                ]}>
-                  <.icon name="hero-chevron-up" class="h-4 w-4 text-gray-400" />
-                </span>
-              </button>
-              <h3 class="text-sm font-medium text-gray-300">
-                Execution Logs
-                <%= if length(@logs) > 0 do %>
-                  <span class="ml-2 px-1.5 py-0.5 bg-[#1a1a1a] text-xs text-gray-400">
-                    {length(@logs)}
-                  </span>
-                <% end %>
-              </h3>
-            </div>
-            <div class="flex items-center gap-2">
-              <.button phx-click="clear_logs" variant={:ghost} size={:sm}>
-                Clear
-              </.button>
-            </div>
-          </div>
+    <!-- Log Panel (Expandable) -->
           <div
-            id="log-stream"
-            phx-hook="LogStream"
-            class="flex-1 overflow-auto px-3 py-2 font-mono text-xs leading-tight bg-[#0a0a0a]"
+            id="log-panel"
+            class="bg-[#0a0a0a] border-t border-[#222] flex flex-col flex-shrink-0 overflow-hidden"
+            style={if @logs_expanded, do: "height: 256px;", else: "height: 48px;"}
           >
-            <%= if Enum.empty?(@logs) do %>
-              <p class="text-gray-500 italic py-2">No logs yet. Run a task to see output.</p>
-            <% else %>
-              <pre class="whitespace-pre-wrap"><%= for {line, idx} <- Enum.with_index(@logs) do %><code id={"log-#{idx}"} class={log_line_class(line)}>{line.content}
+            <div class="flex items-center justify-between px-4 py-2 bg-[#111] h-12 flex-shrink-0">
+              <div class="flex items-center gap-2">
+                <button
+                  type="button"
+                  phx-click="toggle_logs"
+                  class="p-1 hover:bg-[#1a1a1a] transition-colors"
+                >
+                  <span class={[
+                    "block transition-transform duration-200",
+                    if(@logs_expanded, do: "rotate-180", else: "")
+                  ]}>
+                    <.icon name="hero-chevron-up" class="h-4 w-4 text-gray-400" />
+                  </span>
+                </button>
+                <h3 class="text-sm font-medium text-gray-300">
+                  Execution Logs
+                  <%= if length(@logs) > 0 do %>
+                    <span class="ml-2 px-1.5 py-0.5 bg-[#1a1a1a] text-xs text-gray-400">
+                      {length(@logs)}
+                    </span>
+                  <% end %>
+                </h3>
+              </div>
+              <div class="flex items-center gap-2">
+                <.button phx-click="clear_logs" variant={:ghost} size={:sm}>
+                  Clear
+                </.button>
+              </div>
+            </div>
+            <div
+              id="log-stream"
+              phx-hook="LogStream"
+              class="flex-1 overflow-auto px-3 py-2 font-mono text-xs leading-tight bg-[#0a0a0a]"
+            >
+              <%= if Enum.empty?(@logs) do %>
+                <p class="text-gray-500 italic py-2">No logs yet. Run a task to see output.</p>
+              <% else %>
+                <pre class="whitespace-pre-wrap"><%= for {line, idx} <- Enum.with_index(@logs) do %><code id={"log-#{idx}"} class={log_line_class(line)}>{line.content}
     </code><% end %></pre>
-            <% end %>
+              <% end %>
+            </div>
           </div>
         </div>
       </div>
@@ -496,7 +496,7 @@ defmodule NexusWeb.DashboardLive do
     dependents =
       if assigns.graph, do: DAG.direct_dependents(assigns.graph, assigns.task_name), else: []
 
-    # Get task hosts with their statuses
+    # Get task hosts
     task_hosts = Map.get(assigns.task, :on, :local)
 
     host_list =
@@ -542,11 +542,6 @@ defmodule NexusWeb.DashboardLive do
         <div>
           <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">
             Hosts
-            <%= if length(@host_list) > 0 do %>
-              <a href="/hosts" class="ml-2 text-[#00e599] hover:underline font-normal normal-case">
-                View all
-              </a>
-            <% end %>
           </h3>
           <div class="space-y-1">
             <%= if Enum.empty?(@host_list) do %>
@@ -567,8 +562,7 @@ defmodule NexusWeb.DashboardLive do
               <%= if has_unreachable_hosts?(@host_list, @host_statuses) do %>
                 <div class="mt-2 p-2 bg-orange-950/50 border border-orange-500/50 text-xs text-orange-300">
                   <.icon name="hero-exclamation-triangle" class="h-3 w-3 inline mr-1" />
-                  Some hosts are unreachable.
-                  <a href="/hosts" class="underline">Check connectivity</a>
+                  Some hosts are unreachable
                 </div>
               <% end %>
             <% end %>

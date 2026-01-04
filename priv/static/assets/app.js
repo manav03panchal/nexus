@@ -1791,18 +1791,18 @@
     canPushState() {
       return typeof history.pushState !== "undefined";
     },
-    dropLocal(localStorage, namespace, subkey) {
-      return localStorage.removeItem(this.localKey(namespace, subkey));
+    dropLocal(localStorage2, namespace, subkey) {
+      return localStorage2.removeItem(this.localKey(namespace, subkey));
     },
-    updateLocal(localStorage, namespace, subkey, initial, func) {
-      const current = this.getLocal(localStorage, namespace, subkey);
+    updateLocal(localStorage2, namespace, subkey, initial, func) {
+      const current = this.getLocal(localStorage2, namespace, subkey);
       const key = this.localKey(namespace, subkey);
       const newVal = current === null ? initial : func(current);
-      localStorage.setItem(key, JSON.stringify(newVal));
+      localStorage2.setItem(key, JSON.stringify(newVal));
       return newVal;
     },
-    getLocal(localStorage, namespace, subkey) {
-      return JSON.parse(localStorage.getItem(this.localKey(namespace, subkey)));
+    getLocal(localStorage2, namespace, subkey) {
+      return JSON.parse(localStorage2.getItem(this.localKey(namespace, subkey)));
     },
     updateCurrentState(callback) {
       if (!this.canPushState()) {
@@ -39202,6 +39202,10 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
       this.el.scrollTop = this.el.scrollHeight;
     }
   };
+  Hooks2.Sidebar = {
+    mounted() {
+    }
+  };
   console.log("=== INITIALIZING LIVEVIEW ===");
   console.log("Hooks available:", Object.keys(Hooks2));
   var _a;
@@ -39219,6 +39223,44 @@ removing illegal node: "${(childNode.outerHTML || childNode.nodeValue).trim()}"
   window.addEventListener("phx:page-loading-stop", (_info) => topbar_default.hide());
   liveSocket.connect();
   window.liveSocket = liveSocket;
+  (function() {
+    const KEY = "nexus-sidebar-collapsed";
+    function applyState() {
+      if (localStorage.getItem(KEY) === "true") {
+        document.body.classList.add("sidebar-collapsed");
+      } else {
+        document.body.classList.remove("sidebar-collapsed");
+      }
+      document.documentElement.classList.remove("sidebar-collapsed-preload");
+      document.body.classList.add("sidebar-ready");
+    }
+    function bindToggle() {
+      const toggle = document.getElementById("sidebar-toggle");
+      if (!toggle || toggle._bound)
+        return;
+      toggle._bound = true;
+      toggle.onclick = function(e) {
+        e.stopPropagation();
+        if (document.body.classList.contains("sidebar-collapsed")) {
+          document.body.classList.remove("sidebar-collapsed");
+          localStorage.setItem(KEY, "false");
+        } else {
+          document.body.classList.add("sidebar-collapsed");
+          localStorage.setItem(KEY, "true");
+        }
+      };
+    }
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", function() {
+        bindToggle();
+        applyState();
+      });
+    } else {
+      bindToggle();
+      applyState();
+    }
+    window.addEventListener("phx:page-loading-stop", bindToggle);
+  })();
 })();
 /**
  * @license MIT

@@ -18,12 +18,14 @@ defmodule NexusWeb.AssetsController do
   def css(conn, _params) do
     conn
     |> put_resp_content_type("text/css")
+    |> put_resp_header("cache-control", "no-cache, no-store, must-revalidate")
     |> send_resp(200, @app_css)
   end
 
   def js(conn, _params) do
     conn
     |> put_resp_content_type("application/javascript")
+    |> put_resp_header("cache-control", "no-cache, no-store, must-revalidate")
     |> send_resp(200, @app_js)
   end
 

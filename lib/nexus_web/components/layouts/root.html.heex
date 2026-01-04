@@ -6,6 +6,12 @@
     <meta name="csrf-token" content={get_csrf_token()} />
     <title>Nexus Dashboard</title>
     <link phx-track-static rel="stylesheet" href={"/assets/app.css?v=#{:erlang.system_time()}"} />
+    <script>
+      // Apply sidebar state immediately to prevent flash
+      if(localStorage.getItem("nexus-sidebar-collapsed")==="true"){
+        document.documentElement.classList.add("sidebar-collapsed-preload");
+      }
+    </script>
     <script
       defer
       phx-track-static

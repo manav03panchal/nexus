@@ -10,6 +10,7 @@ defmodule NexusWeb.ExecutionSession do
 
   alias Nexus.DSL.Parser
   alias Nexus.Executor.Pipeline
+  alias Nexus.Notifications.Sender, as: NotificationSender
   alias Phoenix.PubSub
 
   defstruct [:id, :config_file, :task, :subscriber, :check_mode, :tags, :skip_tags, :status]
@@ -147,10 +148,15 @@ defmodule NexusWeb.ExecutionSession do
             Map.keys(config.tasks)
           end
 
+        started_at = DateTime.utc_now()
         result = Pipeline.run(config, tasks, opts)
+        finished_at = DateTime.utc_now()
 
         # Detach handlers
         detach_telemetry_handlers(handler_id)
+
+        # Send notifications
+        send_notifications(config, result, started_at, finished_at, parent)
 
         case result do
           {:ok, _} -> :ok
@@ -270,4 +276,45 @@ defmodule NexusWeb.ExecutionSession do
 
   defp notify_subscriber(%{subscriber: nil}, _event), do: :ok
   defp notify_subscriber(%{subscriber: pid}, event), do: send(pid, event)
+
+  defp send_notifications(config, result, started_at, finished_at, parent) do
+    if config.notifications != [] do
+      status = if match?({:ok, _}, result), do: :success, else: :failure
+      duration_ms = DateTime.diff(finished_at, started_at, :millisecond)
+
+      notification_result = %{
+        status: status,
+        duration_ms: duration_ms,
+        started_at: started_at,
+        finished_at: finished_at,
+        tasks: build_task_results(result)
+      }
+
+      send(
+        parent,
+        {:log_line,
+         %{type: :info, content: "Sending notifications...", timestamp: DateTime.utc_now()}}
+      )
+
+      NotificationSender.send_all(config.notifications, notification_result)
+
+      send(
+        parent,
+        {:log_line,
+         %{type: :success, content: "Notifications sent", timestamp: DateTime.utc_now()}}
+      )
+    end
+  end
+
+  defp build_task_results({:ok, %{task_results: task_results}}) when is_list(task_results) do
+    Enum.map(task_results, fn task_result ->
+      %{
+        name: task_result.task,
+        status: if(task_result.status == :ok, do: :success, else: :failure),
+        hosts: []
+      }
+    end)
+  end
+
+  defp build_task_results(_), do: []
 end

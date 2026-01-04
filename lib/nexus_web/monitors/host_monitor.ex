@@ -270,21 +270,20 @@ defmodule NexusWeb.HostMonitor do
 
     case Connection.connect(host.hostname, opts) do
       {:ok, conn} ->
-        # Step 3: Command execution check
         result = check_command(conn)
         Connection.close(conn)
         result
 
-      {:error, :authentication_failed} ->
-        :ssh_auth_failed
-
-      {:error, :timeout} ->
-        :ssh_timeout
-
-      {:error, _reason} ->
-        :ssh_auth_failed
+      {:error, reason} ->
+        map_connection_error(reason)
     end
   end
+
+  defp map_connection_error({:connection_timeout, _}), do: :ssh_timeout
+  defp map_connection_error({:connection_refused, _}), do: :tcp_failed
+  defp map_connection_error({:host_unreachable, _}), do: :tcp_failed
+  defp map_connection_error({:hostname_not_found, _}), do: :tcp_failed
+  defp map_connection_error(_), do: :ssh_auth_failed
 
   defp check_command(conn) do
     case Connection.exec(conn, "echo ok", timeout: 5_000) do
