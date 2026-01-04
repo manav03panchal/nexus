@@ -24,14 +24,16 @@ defmodule NexusWeb.DashboardLive do
       |> assign(:dag_data, nil)
       |> assign(:selected_task, nil)
       |> assign(:task_statuses, %{})
+      |> assign(:host_statuses, %{})
       |> assign(:logs, [])
       |> assign(:execution_session, nil)
       |> assign(:error, nil)
       |> assign(:logs_expanded, false)
 
     if connected?(socket) do
-      # Subscribe to execution updates
+      # Subscribe to execution updates and host status
       PubSub.subscribe(NexusWeb.PubSub, "execution:updates")
+      PubSub.subscribe(NexusWeb.PubSub, "hosts:status")
       send(self(), :load_config)
     end
 
@@ -59,12 +61,21 @@ defmodule NexusWeb.DashboardLive do
           |> Map.keys()
           |> Map.new(fn name -> {name, :pending} end)
 
+        # Update host monitor with hosts and get statuses
+        NexusWeb.HostMonitor.update_hosts(config.hosts)
+
+        host_statuses =
+          NexusWeb.HostMonitor.get_all_statuses()
+          |> Enum.map(fn s -> {s.name, s.status} end)
+          |> Map.new()
+
         {:noreply,
          socket
          |> assign(:config, config)
          |> assign(:graph, graph)
          |> assign(:dag_data, dag_data)
          |> assign(:task_statuses, task_statuses)
+         |> assign(:host_statuses, host_statuses)
          |> assign(:error, nil)}
 
       {:error, reason} ->
@@ -120,6 +131,11 @@ defmodule NexusWeb.DashboardLive do
 
   def handle_info({:execution_complete, _session_id}, socket) do
     {:noreply, assign(socket, :execution_session, nil)}
+  end
+
+  def handle_info({:host_status, host_name, status}, socket) do
+    host_statuses = Map.put(socket.assigns.host_statuses, host_name, status)
+    {:noreply, assign(socket, :host_statuses, host_statuses)}
   end
 
   def handle_info(_msg, socket) do
@@ -366,6 +382,7 @@ defmodule NexusWeb.DashboardLive do
                 status={Map.get(@task_statuses, @selected_task, :pending)}
                 graph={@graph}
                 executing={not is_nil(@execution_session)}
+                host_statuses={@host_statuses}
               />
             <% end %>
           </div>
@@ -433,11 +450,44 @@ defmodule NexusWeb.DashboardLive do
   defp format_command(cmd) when is_binary(cmd), do: cmd
   defp format_command(cmd), do: inspect(cmd)
 
+  # Host status helpers
+  defp host_dot_class(:reachable), do: "bg-[#00e599]"
+  defp host_dot_class(:checking), do: "bg-blue-400 animate-pulse"
+  defp host_dot_class(:tcp_failed), do: "bg-red-400"
+  defp host_dot_class(:ssh_auth_failed), do: "bg-orange-400"
+  defp host_dot_class(:ssh_timeout), do: "bg-yellow-400"
+  defp host_dot_class(:command_failed), do: "bg-red-400"
+  defp host_dot_class(_), do: "bg-gray-500"
+
+  defp host_text_class(:reachable), do: "text-[#00e599]"
+  defp host_text_class(:checking), do: "text-blue-400"
+  defp host_text_class(:tcp_failed), do: "text-red-400"
+  defp host_text_class(:ssh_auth_failed), do: "text-orange-400"
+  defp host_text_class(:ssh_timeout), do: "text-yellow-400"
+  defp host_text_class(:command_failed), do: "text-red-400"
+  defp host_text_class(_), do: "text-gray-500"
+
+  defp host_status_label(:reachable), do: "OK"
+  defp host_status_label(:checking), do: "..."
+  defp host_status_label(:tcp_failed), do: "Unreachable"
+  defp host_status_label(:ssh_auth_failed), do: "Auth Failed"
+  defp host_status_label(:ssh_timeout), do: "Timeout"
+  defp host_status_label(:command_failed), do: "Cmd Failed"
+  defp host_status_label(_), do: "Unknown"
+
+  defp has_unreachable_hosts?(host_list, host_statuses) do
+    Enum.any?(host_list, fn host ->
+      status = Map.get(host_statuses, host, :unknown)
+      status in [:tcp_failed, :ssh_auth_failed, :ssh_timeout, :command_failed]
+    end)
+  end
+
   attr :task, :map, required: true
   attr :task_name, :atom, required: true
   attr :status, :atom, required: true
   attr :graph, :any, required: true
   attr :executing, :boolean, required: true
+  attr :host_statuses, :map, required: true
 
   defp task_panel(assigns) do
     deps =
@@ -446,8 +496,20 @@ defmodule NexusWeb.DashboardLive do
     dependents =
       if assigns.graph, do: DAG.direct_dependents(assigns.graph, assigns.task_name), else: []
 
+    # Get task hosts with their statuses
+    task_hosts = Map.get(assigns.task, :on, :local)
+
+    host_list =
+      case task_hosts do
+        :local -> []
+        host when is_atom(host) -> [host]
+        hosts when is_list(hosts) -> hosts
+        _ -> []
+      end
+
     assigns = assign(assigns, :deps, deps)
     assigns = assign(assigns, :dependents, dependents)
+    assigns = assign(assigns, :host_list, host_list)
 
     ~H"""
     <div id="task-panel" class="w-96 bg-[#111] border-l border-[#222] flex flex-col h-full">
@@ -480,17 +542,34 @@ defmodule NexusWeb.DashboardLive do
         <div>
           <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">
             Hosts
+            <%= if length(@host_list) > 0 do %>
+              <a href="/hosts" class="ml-2 text-[#00e599] hover:underline font-normal normal-case">
+                View all
+              </a>
+            <% end %>
           </h3>
-          <div class="flex flex-wrap gap-1">
-            <%= if hosts = Map.get(@task, :hosts, []) do %>
-              <%= if Enum.empty?(hosts) do %>
-                <span class="text-sm text-gray-500 italic">All hosts</span>
-              <% else %>
-                <%= for host <- hosts do %>
-                  <span class="px-2 py-0.5 bg-[#1a1a1a] border border-[#333] text-xs text-gray-300">
-                    {host}
+          <div class="space-y-1">
+            <%= if Enum.empty?(@host_list) do %>
+              <span class="text-sm text-gray-500 italic">Local execution</span>
+            <% else %>
+              <%= for host <- @host_list do %>
+                <% host_status = Map.get(@host_statuses, host, :unknown) %>
+                <div class="flex items-center justify-between px-2 py-1.5 bg-[#1a1a1a] border border-[#333]">
+                  <div class="flex items-center gap-2">
+                    <span class={["w-2 h-2 rounded-full", host_dot_class(host_status)]}></span>
+                    <span class="text-xs font-mono text-gray-300">{host}</span>
+                  </div>
+                  <span class={["text-xs", host_text_class(host_status)]}>
+                    {host_status_label(host_status)}
                   </span>
-                <% end %>
+                </div>
+              <% end %>
+              <%= if has_unreachable_hosts?(@host_list, @host_statuses) do %>
+                <div class="mt-2 p-2 bg-orange-950/50 border border-orange-500/50 text-xs text-orange-300">
+                  <.icon name="hero-exclamation-triangle" class="h-3 w-3 inline mr-1" />
+                  Some hosts are unreachable.
+                  <a href="/hosts" class="underline">Check connectivity</a>
+                </div>
               <% end %>
             <% end %>
           </div>
