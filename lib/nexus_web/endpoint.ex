@@ -5,8 +5,6 @@ defmodule NexusWeb.Endpoint do
 
   use Phoenix.Endpoint, otp_app: :nexus
 
-  @static_paths ~w(assets fonts images favicon.ico robots.txt)
-
   # The session will be stored in the cookie and signed
   @session_options [
     store: :cookie,
@@ -20,13 +18,7 @@ defmodule NexusWeb.Endpoint do
     longpoll: false
   )
 
-  # Serve static files from priv/static
-  plug(Plug.Static,
-    at: "/",
-    from: {:nexus, "priv/static"},
-    gzip: false,
-    only: @static_paths
-  )
+  # Static assets are served via AssetsController for escript compatibility
 
   # Code reloading can be explicitly enabled under the :code_reloader config
   if code_reloading? do
