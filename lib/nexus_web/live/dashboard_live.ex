@@ -311,7 +311,7 @@ defmodule NexusWeb.DashboardLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="flex flex-col h-full bg-[#0a0a0a] text-gray-100">
+    <div class="flex flex-col h-full w-full bg-[#0a0a0a] text-gray-100">
       <!-- Header -->
       <header class="bg-[#111] border-b border-[#222] px-6 py-3 shrink-0">
         <div class="flex items-center justify-between">
@@ -335,11 +335,11 @@ defmodule NexusWeb.DashboardLive do
       </header>
       
     <!-- Main content area -->
-      <div class="flex-1 flex flex-col overflow-hidden min-w-0">
+      <div class="flex-1 flex flex-col min-h-0">
         <!-- Top: DAG + Task Panel side by side -->
-        <div class="flex-1 flex overflow-hidden min-w-0">
+        <div class="flex-1 flex min-h-0">
           <!-- DAG View -->
-          <div id="dag-area" class="flex-1 relative min-w-0">
+          <div id="dag-area" class="flex-1 relative min-h-0">
             <%= if @error do %>
               <div class="absolute inset-0 flex items-center justify-center">
                 <div class="bg-red-900/50 border border-red-500 p-6 max-w-md">
