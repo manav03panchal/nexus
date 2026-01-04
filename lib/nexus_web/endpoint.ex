@@ -1,6 +1,10 @@
+# sobelow_skip ["Config.CSWH"]
 defmodule NexusWeb.Endpoint do
   @moduledoc """
   Phoenix endpoint for the Nexus web dashboard.
+
+  Note: check_origin is disabled because this is a local development tool
+  that may be accessed via different hostnames (localhost, 127.0.0.1, LAN IP).
   """
 
   use Phoenix.Endpoint, otp_app: :nexus
