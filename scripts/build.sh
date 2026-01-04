@@ -31,6 +31,11 @@ echo ""
 echo "Compiling..."
 MIX_ENV=prod mix compile
 
+# Build assets for web dashboard
+echo ""
+echo "Building web assets..."
+MIX_ENV=prod mix assets.build
+
 # Build escript
 echo ""
 echo "Building escript..."

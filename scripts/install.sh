@@ -61,7 +61,10 @@ install_nexus() {
     run mix local.hex --force || error "Failed to install Hex"
     run mix deps.get --only prod || error "Failed to fetch dependencies"
 
-    info "Building..."
+    info "Building assets..."
+    run MIX_ENV=prod mix assets.build || error "Asset build failed"
+
+    info "Building escript..."
     run MIX_ENV=prod mix escript.build || error "Build failed"
 
     info "Installing to ${INSTALL_DIR}..."
