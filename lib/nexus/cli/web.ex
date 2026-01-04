@@ -86,7 +86,6 @@ defmodule Nexus.CLI.Web do
   end
 
   defp format_host({a, b, c, d}), do: "#{a}.#{b}.#{c}.#{d}"
-  defp format_host(host) when is_binary(host), do: host
 
   defp open_browser_url(url) do
     cmd =

@@ -24,6 +24,11 @@ defmodule Nexus.Resources.Executor do
   alias Nexus.Resources.Providers
   alias Nexus.Resources.Types.{Command, Directory, File, Group, Package, Service, User}
 
+  @type context :: %{
+          :facts => map(),
+          :host_id => atom() | binary()
+        }
+
   @resource_providers %{
     Package => Providers.Package,
     Service => Providers.Service,
@@ -49,7 +54,7 @@ defmodule Nexus.Resources.Executor do
       - Result.status may be :ok, :changed, :failed, or :skipped
 
   """
-  @spec execute(struct(), pid() | nil, map()) :: {:ok, Result.t()}
+  @spec execute(struct(), pid() | nil, context()) :: {:ok, Result.t()}
   def execute(resource, conn, context) do
     start_time = System.monotonic_time(:millisecond)
 
@@ -160,7 +165,7 @@ defmodule Nexus.Resources.Executor do
   Returns results for all resources. Stops on first failure unless
   continue_on_error is true.
   """
-  @spec execute_all([struct()], pid() | nil, map(), keyword()) :: {:ok, [Result.t()]}
+  @spec execute_all([struct()], pid() | nil, context(), keyword()) :: {:ok, [Result.t()]}
   def execute_all(resources, conn, context, opts \\ []) do
     continue_on_error = Keyword.get(opts, :continue_on_error, false)
 

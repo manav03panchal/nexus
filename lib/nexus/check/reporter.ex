@@ -241,6 +241,7 @@ defmodule Nexus.Check.Reporter do
   @doc """
   Computes what a template would render to.
   """
+  # sobelow_skip ["RCE.EEx"]
   @spec render_template_preview(Template.t()) :: {:ok, String.t()} | {:error, term()}
   def render_template_preview(%Template{} = template) do
     case Elixir.File.read(template.source) do

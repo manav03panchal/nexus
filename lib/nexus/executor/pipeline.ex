@@ -32,6 +32,9 @@ defmodule Nexus.Executor.Pipeline do
           tasks_succeeded: non_neg_integer(),
           tasks_failed: non_neg_integer(),
           task_results: [TaskRunner.task_result()],
+          handler_results: [map()],
+          handlers_succeeded: non_neg_integer(),
+          handlers_failed: non_neg_integer(),
           aborted_at: atom() | nil
         }
 
@@ -45,7 +48,12 @@ defmodule Nexus.Executor.Pipeline do
           continue_on_error: boolean(),
           parallel_limit: pos_integer(),
           dry_run: boolean(),
-          ssh_opts: keyword()
+          ssh_opts: keyword(),
+          check_mode: boolean(),
+          tags: [atom()],
+          skip_tags: [atom()],
+          output_callback: (atom(), binary() -> any()),
+          task_timeout: pos_integer()
         ]
 
   @doc """

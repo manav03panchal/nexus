@@ -139,12 +139,15 @@ defmodule NexusWeb.ExecutionSession do
 
         opts = build_execution_opts(state, parent)
 
-        result =
+        # Get all task names from config if no specific task specified
+        tasks =
           if state.task do
-            Pipeline.run(config, [String.to_atom(state.task)], opts)
+            [String.to_atom(state.task)]
           else
-            Pipeline.run(config, opts)
+            Map.keys(config.tasks)
           end
+
+        result = Pipeline.run(config, tasks, opts)
 
         # Detach handlers
         detach_telemetry_handlers(handler_id)

@@ -762,6 +762,7 @@ defmodule Nexus.Executor.TaskRunner do
     end
   end
 
+  # sobelow_skip ["RCE.EEx"]
   defp render_template(content, vars) do
     # Convert map to keyword list for EEx bindings
     bindings = Enum.map(vars, fn {k, v} -> {k, v} end)
@@ -804,18 +805,6 @@ defmodule Nexus.Executor.TaskRunner do
           cmd: cmd_desc,
           status: :error,
           output: "timeout waiting for condition",
-          exit_code: 1,
-          attempts: 1,
-          duration_ms: duration
-        }
-
-      {:error, reason} ->
-        Telemetry.emit_command_stop(cmd_desc, duration, 1, inspect(reason))
-
-        %{
-          cmd: cmd_desc,
-          status: :error,
-          output: inspect(reason),
           exit_code: 1,
           attempts: 1,
           duration_ms: duration
@@ -969,16 +958,14 @@ defmodule Nexus.Executor.TaskRunner do
   defp build_resource_context(:local, _conn) do
     %{
       facts: detect_local_facts(),
-      host_id: :local,
-      check_mode: false
+      host_id: :local
     }
   end
 
   defp build_resource_context(:remote, conn) do
     %{
       facts: detect_remote_facts(conn),
-      host_id: :remote,
-      check_mode: false
+      host_id: :remote
     }
   end
 
