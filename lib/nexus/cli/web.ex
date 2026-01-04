@@ -48,8 +48,12 @@ defmodule Nexus.CLI.Web do
   end
 
   defp start_dashboard(config_path, host, port, open_browser) do
+    # Set up logging directory
+    log_dir = setup_log_directory()
+
     url = "http://#{format_host(host)}:#{port}"
-    IO.puts("\nNexus Web Dashboard running at #{url}\n")
+    IO.puts("\nNexus Web Dashboard running at #{url}")
+    IO.puts("Logs: #{log_dir}\n")
 
     # Start the web application
     case NexusWeb.Application.start_link(
@@ -82,5 +86,27 @@ defmodule Nexus.CLI.Web do
       end
 
     System.cmd(cmd, [url], stderr_to_stdout: true)
+  end
+
+  defp setup_log_directory do
+    # Create .nexus/logs directory in user's home
+    home = System.user_home!()
+    log_dir = Path.join([home, ".nexus", "logs"])
+    File.mkdir_p!(log_dir)
+
+    # Configure logger to write to file
+    log_file = Path.join(log_dir, "nexus.log")
+
+    # Add file backend for logging
+    :logger.add_handler(:nexus_file_handler, :logger_std_h, %{
+      config: %{
+        file: String.to_charlist(log_file),
+        max_no_bytes: 10_485_760,
+        max_no_files: 5
+      },
+      formatter: {:logger_formatter, %{template: [:time, " [", :level, "] ", :msg, "\n"]}}
+    })
+
+    log_dir
   end
 end

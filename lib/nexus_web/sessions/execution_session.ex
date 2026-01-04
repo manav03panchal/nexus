@@ -191,10 +191,8 @@ defmodule NexusWeb.ExecutionSession do
         [:nexus, :pipeline, :start],
         [:nexus, :pipeline, :stop]
       ],
-      fn event, measurements, metadata, _config ->
-        handle_telemetry_event(event, measurements, metadata, parent)
-      end,
-      nil
+      &__MODULE__.handle_telemetry_event/4,
+      %{parent: parent}
     )
 
     handler_id
@@ -204,23 +202,26 @@ defmodule NexusWeb.ExecutionSession do
     :telemetry.detach(handler_id)
   end
 
-  defp handle_telemetry_event([:nexus, :task, :start], _measurements, metadata, parent) do
+  @doc false
+  def handle_telemetry_event([:nexus, :task, :start], _measurements, metadata, %{parent: parent}) do
     send(parent, {:task_event, {:task_started, metadata.task}})
   end
 
-  defp handle_telemetry_event([:nexus, :task, :stop], _measurements, metadata, parent) do
+  def handle_telemetry_event([:nexus, :task, :stop], _measurements, metadata, %{parent: parent}) do
     result = if metadata[:error], do: {:error, metadata.error}, else: :ok
     send(parent, {:task_event, {:task_completed, metadata.task, result}})
   end
 
-  defp handle_telemetry_event([:nexus, :command, :start], _measurements, metadata, parent) do
+  def handle_telemetry_event([:nexus, :command, :start], _measurements, metadata, %{
+        parent: parent
+      }) do
     host = metadata[:host] || "local"
     cmd = truncate_command(metadata[:command] || "")
     content = "[#{host}] $ #{cmd}"
     send(parent, {:log_line, %{type: :info, content: content, timestamp: DateTime.utc_now()}})
   end
 
-  defp handle_telemetry_event([:nexus, :command, :stop], _measurements, metadata, parent) do
+  def handle_telemetry_event([:nexus, :command, :stop], _measurements, metadata, %{parent: parent}) do
     host = metadata[:host] || "local"
 
     # Show the output
@@ -252,7 +253,7 @@ defmodule NexusWeb.ExecutionSession do
     end
   end
 
-  defp handle_telemetry_event(_event, _measurements, _metadata, _parent) do
+  def handle_telemetry_event(_event, _measurements, _metadata, _config) do
     :ok
   end
 
