@@ -48,22 +48,8 @@ defmodule Nexus.CLI.Web do
   end
 
   defp start_dashboard(config_path, host, port, open_browser) do
-    IO.puts("")
-    IO.puts("  ┌────────────────────────────────────────────────────┐")
-    IO.puts("  │                                                    │")
-    IO.puts("  │   Nexus Web Dashboard                              │")
-    IO.puts("  │                                                    │")
-    IO.puts("  │   Config: #{String.pad_trailing(Path.basename(config_path), 39)}│")
-
-    IO.puts(
-      "  │   URL:    http://#{format_host(host)}:#{port}#{String.duplicate(" ", 36 - String.length("#{format_host(host)}:#{port}"))}│"
-    )
-
-    IO.puts("  │                                                    │")
-    IO.puts("  │   Press Ctrl+C twice to stop                       │")
-    IO.puts("  │                                                    │")
-    IO.puts("  └────────────────────────────────────────────────────┘")
-    IO.puts("")
+    url = "http://#{format_host(host)}:#{port}"
+    IO.puts("\nNexus Web Dashboard running at #{url}\n")
 
     # Start the web application
     case NexusWeb.Application.start_link(
