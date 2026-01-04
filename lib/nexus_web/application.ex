@@ -38,6 +38,7 @@ defmodule NexusWeb.Application do
        [
          http: [ip: host, port: port],
          server: true,
+         check_origin: false,
          secret_key_base: generate_secret_key_base()
        ]}
     ]
