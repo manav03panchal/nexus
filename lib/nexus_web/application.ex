@@ -33,6 +33,9 @@ defmodule NexusWeb.Application do
       # Telemetry broadcaster - bridges Nexus telemetry to PubSub
       NexusWeb.Broadcaster,
 
+      # Host monitor for connectivity checks
+      NexusWeb.HostMonitor,
+
       # Phoenix endpoint
       {NexusWeb.Endpoint,
        [

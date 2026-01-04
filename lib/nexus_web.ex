@@ -42,6 +42,8 @@ defmodule NexusWeb do
       use Phoenix.LiveView,
         layout: {NexusWeb.Layouts, :app}
 
+      on_mount NexusWeb.Hooks.CurrentPath
+
       unquote(html_helpers())
     end
   end

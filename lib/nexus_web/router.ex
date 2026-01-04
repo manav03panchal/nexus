@@ -26,6 +26,15 @@ defmodule NexusWeb.Router do
 
     live("/", DashboardLive, :index)
     live("/task/:task_name", DashboardLive, :task)
+
+    live("/hosts", HostsLive, :index)
+    live("/hosts/:host_name", HostsLive, :show)
+
+    live("/preflight", PreflightLive, :index)
+    live("/secrets", SecretsLive, :index)
+    live("/history", HistoryLive, :index)
+    live("/history/:session_id", HistoryLive, :show)
+    live("/config", ConfigLive, :index)
   end
 
   # API endpoints for programmatic access
