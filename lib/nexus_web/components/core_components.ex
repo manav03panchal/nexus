@@ -31,7 +31,7 @@ defmodule NexusWeb.CoreComponents do
       phx-click={JS.push("lv:clear-flash", value: %{key: @kind}) |> hide("##{@id}")}
       role="alert"
       class={[
-        "fixed top-4 right-4 z-50 w-80 p-4 shadow-lg border",
+        "fixed top-20 left-1/2 -translate-x-1/2 z-50 w-80 p-4 shadow-lg border",
         @kind == :info && "bg-[#0a2a1f] text-[#00e599] border-[#00e599]/50",
         @kind == :error && "bg-red-950 text-red-200 border-red-500/50"
       ]}

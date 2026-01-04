@@ -328,15 +328,6 @@ defmodule NexusWeb.DashboardLive do
                 >
                   <.icon name="hero-stop" class="h-4 w-4 mr-1" /> Stop
                 </.button>
-              <% else %>
-                <.button
-                  phx-click="run_all"
-                  variant={:primary}
-                  size={:sm}
-                  disabled={is_nil(@config)}
-                >
-                  <.icon name="hero-play" class="h-4 w-4 mr-1" /> Run All
-                </.button>
               <% end %>
             </div>
           </div>
