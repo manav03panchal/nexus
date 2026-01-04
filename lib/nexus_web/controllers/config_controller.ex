@@ -5,6 +5,8 @@ defmodule NexusWeb.ConfigController do
 
   use NexusWeb, :controller
 
+  alias Nexus.DSL.Parser
+
   def show(conn, _params) do
     case Application.get_env(:nexus, :web_config_file) do
       nil ->
@@ -13,7 +15,7 @@ defmodule NexusWeb.ConfigController do
         |> json(%{error: "No configuration file loaded"})
 
       config_file ->
-        case Nexus.DSL.Parser.parse_file(config_file) do
+        case Parser.parse_file(config_file) do
           {:ok, config} ->
             json(conn, %{
               file: config_file,

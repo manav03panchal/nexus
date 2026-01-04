@@ -336,65 +336,72 @@ defmodule Nexus.Executor.TaskRunner do
         }
 
       :run ->
-        # Build the full command with env and cwd
-        full_cmd = build_resource_command(cmd)
-
-        # Create a temporary Command struct for execution
-        exec_cmd = %Command{
-          cmd: full_cmd,
-          sudo: cmd.sudo,
-          user: cmd.user,
-          timeout: cmd.timeout,
-          retries: 0,
-          retry_delay: 1_000,
-          when: cmd.when
-        }
-
-        result = executor.(exec_cmd)
-        duration = System.monotonic_time(:millisecond) - start_time
-
-        case result do
-          {:ok, output, 0} ->
-            Telemetry.emit_command_stop(cmd.cmd, duration, 0, output, host_name)
-
-            base_result = %{
-              cmd: cmd.cmd,
-              status: :ok,
-              output: output,
-              exit_code: 0,
-              attempts: 1,
-              duration_ms: duration
-            }
-
-            # Add notify handler if specified and command succeeded
-            if cmd.notify, do: Map.put(base_result, :notify, cmd.notify), else: base_result
-
-          {:ok, output, exit_code} ->
-            Telemetry.emit_command_stop(cmd.cmd, duration, exit_code, output, host_name)
-
-            %{
-              cmd: cmd.cmd,
-              status: :error,
-              output: output,
-              exit_code: exit_code,
-              attempts: 1,
-              duration_ms: duration
-            }
-
-          {:error, reason} ->
-            error_output = inspect(reason)
-            Telemetry.emit_command_stop(cmd.cmd, duration, -1, error_output, host_name)
-
-            %{
-              cmd: cmd.cmd,
-              status: :error,
-              output: error_output,
-              exit_code: -1,
-              attempts: 1,
-              duration_ms: duration
-            }
-        end
+        execute_resource_command(cmd, executor, start_time, host_name)
     end
+  end
+
+  defp execute_resource_command(cmd, executor, start_time, host_name) do
+    # Build the full command with env and cwd
+    full_cmd = build_resource_command(cmd)
+
+    # Create a temporary Command struct for execution
+    exec_cmd = %Command{
+      cmd: full_cmd,
+      sudo: cmd.sudo,
+      user: cmd.user,
+      timeout: cmd.timeout,
+      retries: 0,
+      retry_delay: 1_000,
+      when: cmd.when
+    }
+
+    result = executor.(exec_cmd)
+    duration = System.monotonic_time(:millisecond) - start_time
+
+    handle_resource_command_result(result, cmd, duration, host_name)
+  end
+
+  defp handle_resource_command_result({:ok, output, 0}, cmd, duration, host_name) do
+    Telemetry.emit_command_stop(cmd.cmd, duration, 0, output, host_name)
+
+    base_result = %{
+      cmd: cmd.cmd,
+      status: :ok,
+      output: output,
+      exit_code: 0,
+      attempts: 1,
+      duration_ms: duration
+    }
+
+    # Add notify handler if specified and command succeeded
+    if cmd.notify, do: Map.put(base_result, :notify, cmd.notify), else: base_result
+  end
+
+  defp handle_resource_command_result({:ok, output, exit_code}, cmd, duration, host_name) do
+    Telemetry.emit_command_stop(cmd.cmd, duration, exit_code, output, host_name)
+
+    %{
+      cmd: cmd.cmd,
+      status: :error,
+      output: output,
+      exit_code: exit_code,
+      attempts: 1,
+      duration_ms: duration
+    }
+  end
+
+  defp handle_resource_command_result({:error, reason}, cmd, duration, host_name) do
+    error_output = inspect(reason)
+    Telemetry.emit_command_stop(cmd.cmd, duration, -1, error_output, host_name)
+
+    %{
+      cmd: cmd.cmd,
+      status: :error,
+      output: error_output,
+      exit_code: -1,
+      attempts: 1,
+      duration_ms: duration
+    }
   end
 
   # Check idempotency guards for ResourceCommand
@@ -756,14 +763,12 @@ defmodule Nexus.Executor.TaskRunner do
   end
 
   defp render_template(content, vars) do
-    try do
-      # Convert map to keyword list for EEx bindings
-      bindings = Enum.map(vars, fn {k, v} -> {k, v} end)
-      rendered = EEx.eval_string(content, assigns: bindings)
-      {:ok, rendered}
-    rescue
-      e -> {:error, {:template_error, Exception.message(e)}}
-    end
+    # Convert map to keyword list for EEx bindings
+    bindings = Enum.map(vars, fn {k, v} -> {k, v} end)
+    rendered = EEx.eval_string(content, assigns: bindings)
+    {:ok, rendered}
+  rescue
+    e -> {:error, {:template_error, Exception.message(e)}}
   end
 
   # ============================================================================

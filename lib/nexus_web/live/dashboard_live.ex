@@ -43,11 +43,6 @@ defmodule NexusWeb.DashboardLive do
     # Store the requested task name - we'll resolve it once config loads
     # Use String.to_atom since config may not be loaded yet
     task_atom = String.to_atom(task_name)
-
-    IO.puts(
-      "=== HANDLE_PARAMS: selected_task=#{task_atom}, config=#{socket.assigns.config != nil} ==="
-    )
-
     {:noreply, assign(socket, :selected_task, task_atom)}
   end
 
@@ -57,16 +52,8 @@ defmodule NexusWeb.DashboardLive do
 
   @impl true
   def handle_info(:load_config, socket) do
-    IO.puts("\n=== LOAD_CONFIG MESSAGE RECEIVED ===")
-    IO.puts("Config file: #{inspect(socket.assigns.config_file)}")
-
     case load_and_build_dag(socket.assigns.config_file) do
       {:ok, config, graph, dag_data} ->
-        IO.puts("✓ Successfully loaded config")
-        IO.puts("Tasks: #{map_size(config.tasks)}")
-        IO.puts("DAG nodes: #{length(dag_data.nodes)}")
-        IO.puts("DAG edges: #{length(dag_data.edges)}")
-
         task_statuses =
           config.tasks
           |> Map.keys()
@@ -81,7 +68,6 @@ defmodule NexusWeb.DashboardLive do
          |> assign(:error, nil)}
 
       {:error, reason} ->
-        IO.puts("✗ Failed to load config: #{inspect(reason)}")
         {:noreply, assign(socket, :error, "Failed to load config: #{inspect(reason)}")}
     end
   end
@@ -143,11 +129,6 @@ defmodule NexusWeb.DashboardLive do
   @impl true
   def handle_event("select_task", %{"task" => task_name}, socket) do
     task_atom = String.to_atom(task_name)
-
-    IO.puts(
-      "=== SELECT_TASK: selected_task=#{task_atom}, config=#{socket.assigns.config != nil} ==="
-    )
-
     # Set selected_task directly AND push_patch to update URL
     socket = assign(socket, :selected_task, task_atom)
     {:noreply, push_patch(socket, to: "/task/#{task_name}", replace: true)}
@@ -185,10 +166,6 @@ defmodule NexusWeb.DashboardLive do
   end
 
   def handle_event("toggle_logs", _params, socket) do
-    IO.puts(
-      "=== TOGGLE LOGS CLICKED === expanded: #{socket.assigns.logs_expanded} -> #{not socket.assigns.logs_expanded}"
-    )
-
     {:noreply, assign(socket, :logs_expanded, not socket.assigns.logs_expanded)}
   end
 
@@ -260,61 +237,59 @@ defmodule NexusWeb.DashboardLive do
   end
 
   defp run_task(socket, task_name) do
-    if socket.assigns.execution_session do
-      {:noreply, put_flash(socket, :error, "Execution already in progress")}
-    else
-      case NexusWeb.SessionSupervisor.start_session(
+    with nil <- socket.assigns.execution_session,
+         {:ok, session_id} <-
+           NexusWeb.SessionSupervisor.start_session(
              socket.assigns.config_file,
              Atom.to_string(task_name),
              subscriber: self()
            ) do
-        {:ok, session_id} ->
-          # Reset task statuses
-          task_statuses =
-            socket.assigns.config.tasks
-            |> Map.keys()
-            |> Map.new(fn name -> {name, :pending} end)
+      task_statuses = reset_task_statuses(socket)
 
-          {:noreply,
-           socket
-           |> assign(:execution_session, session_id)
-           |> assign(:task_statuses, task_statuses)
-           |> assign(:logs, [])
-           |> put_flash(:info, "Started execution of #{task_name}")}
+      {:noreply,
+       socket
+       |> assign(:execution_session, session_id)
+       |> assign(:task_statuses, task_statuses)
+       |> assign(:logs, [])
+       |> put_flash(:info, "Started execution of #{task_name}")}
+    else
+      session_id when is_reference(session_id) ->
+        {:noreply, put_flash(socket, :error, "Execution already in progress")}
 
-        {:error, reason} ->
-          {:noreply, put_flash(socket, :error, "Failed to start: #{inspect(reason)}")}
-      end
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Failed to start: #{inspect(reason)}")}
     end
   end
 
   defp run_all_tasks(socket) do
-    if socket.assigns.execution_session do
-      {:noreply, put_flash(socket, :error, "Execution already in progress")}
-    else
-      case NexusWeb.SessionSupervisor.start_session(
+    with nil <- socket.assigns.execution_session,
+         {:ok, session_id} <-
+           NexusWeb.SessionSupervisor.start_session(
              socket.assigns.config_file,
              nil,
              subscriber: self()
            ) do
-        {:ok, session_id} ->
-          # Reset task statuses
-          task_statuses =
-            socket.assigns.config.tasks
-            |> Map.keys()
-            |> Map.new(fn name -> {name, :pending} end)
+      task_statuses = reset_task_statuses(socket)
 
-          {:noreply,
-           socket
-           |> assign(:execution_session, session_id)
-           |> assign(:task_statuses, task_statuses)
-           |> assign(:logs, [])
-           |> put_flash(:info, "Started full pipeline execution")}
+      {:noreply,
+       socket
+       |> assign(:execution_session, session_id)
+       |> assign(:task_statuses, task_statuses)
+       |> assign(:logs, [])
+       |> put_flash(:info, "Started full pipeline execution")}
+    else
+      session_id when is_reference(session_id) ->
+        {:noreply, put_flash(socket, :error, "Execution already in progress")}
 
-        {:error, reason} ->
-          {:noreply, put_flash(socket, :error, "Failed to start: #{inspect(reason)}")}
-      end
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Failed to start: #{inspect(reason)}")}
     end
+  end
+
+  defp reset_task_statuses(socket) do
+    socket.assigns.config.tasks
+    |> Map.keys()
+    |> Map.new(fn name -> {name, :pending} end)
   end
 
   @impl true

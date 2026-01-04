@@ -6,6 +6,7 @@ defmodule Nexus.CLI.Web do
   and task execution.
   """
 
+  alias Nexus.DSL.Parser
   alias Nexus.Output.Renderer
 
   @doc """
@@ -20,12 +21,9 @@ defmodule Nexus.CLI.Web do
     # Validate config file exists
     config_path = Path.expand(config_file)
 
-    unless File.exists?(config_path) do
-      Renderer.error("Config file not found: #{config_file}")
-      {:error, 1}
-    else
+    if File.exists?(config_path) do
       # Validate the config parses correctly
-      case Nexus.DSL.Parser.parse_file(config_path) do
+      case Parser.parse_file(config_path) do
         {:ok, _config} ->
           start_dashboard(config_path, host, port, open_browser)
 
@@ -33,6 +31,9 @@ defmodule Nexus.CLI.Web do
           Renderer.error("Failed to parse config: #{inspect(reason)}")
           {:error, 1}
       end
+    else
+      Renderer.error("Config file not found: #{config_file}")
+      {:error, 1}
     end
   end
 
