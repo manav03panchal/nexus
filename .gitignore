@@ -26,6 +26,3 @@ nexus-*.tar
 test/fixtures/ssh_keys/id_*
 test/fixtures/ssh_keys/test_key
 !test/fixtures/ssh_keys/*.pub
-
-# Elixir script files
-*.exs
